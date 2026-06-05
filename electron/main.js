@@ -15,6 +15,10 @@ function getResourcePath(...segments) {
 }
 
 function findPython() {
+  if (process.platform === 'win32') {
+    const venvPath = getResourcePath('.venv', 'Scripts', 'python.exe');
+    return venvPath;
+  }
   const venvPython = getResourcePath('.venv', 'bin', 'python3');
   return venvPython;
 }

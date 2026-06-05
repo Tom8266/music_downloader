@@ -5,9 +5,10 @@
   "main": "electron/main.js",
   "scripts": {
     "start": "electron .",
-    "pack": "electron-builder --dir",
-    "dist": "electron-builder",
-    "dist:linux": "electron-builder --linux"
+    "dist:linux": "electron-builder --linux",
+    "dist:win": "electron-builder --win",
+    "dist:mac": "electron-builder --mac",
+    "dist:all": "electron-builder --linux --win --mac"
   },
   "build": {
     "appId": "xyz.gdstudio.music-downloader",
@@ -28,7 +29,20 @@
     ],
     "linux": {
       "target": ["AppImage", "deb"],
-      "category": "Audio"
+      "category": "Audio",
+      "icon": "electron/icon.png"
+    },
+    "win": {
+      "target": ["nsis"],
+      "icon": "electron/icon.png"
+    },
+    "mac": {
+      "target": ["dmg"],
+      "category": "public.app-category.music",
+      "icon": "electron/icon.png",
+      "extendInfo": {
+        "NSMicrophoneUsageDescription": "不需要麦克风权限"
+      }
     }
   },
   "devDependencies": {
