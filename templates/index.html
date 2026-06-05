@@ -1,0 +1,562 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Music Downloader</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .loading { animation: spin 1s linear infinite; }
+
+  @keyframes fadeIn {
+    from { opacity: 0; transform: translateY(12px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  .fade-in { animation: fadeIn 0.4s ease-out forwards; }
+
+  @keyframes pulse-ring {
+    0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(99, 102, 241, 0.4); }
+    70% { transform: scale(1); box-shadow: 0 0 0 10px rgba(99, 102, 241, 0); }
+    100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(99, 102, 241, 0); }
+  }
+
+  @keyframes shimmer {
+    0% { background-position: -200% 0; }
+    100% { background-position: 200% 0; }
+  }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+    background: radial-gradient(ellipse at top, #1e1b4b 0%, #0f0f1a 50%, #000000 100%);
+  }
+
+  .glass {
+    background: rgba(30, 30, 50, 0.75);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+  }
+
+  .glass-strong {
+    background: rgba(20, 20, 35, 0.9);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+  }
+
+  .search-glow:focus-within {
+    box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.2), 0 0 20px rgba(99, 102, 241, 0.1);
+  }
+
+  .card-hover {
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+  .card-hover:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(99, 102, 241, 0.2);
+  }
+
+  .btn-primary {
+    background: linear-gradient(135deg, #0ea5e9 0%, #3b82f6 100%);
+    transition: all 0.2s ease;
+  }
+  .btn-primary:hover {
+    background: linear-gradient(135deg, #38bdf8 0%, #60a5fa 100%);
+    box-shadow: 0 4px 20px rgba(14, 165, 233, 0.4);
+    transform: translateY(-1px);
+  }
+  .btn-primary:active {
+    transform: translateY(0);
+  }
+
+  .btn-play {
+    background: linear-gradient(135deg, #f43f5e 0%, #e11d48 100%);
+    transition: all 0.2s ease;
+  }
+  .btn-play:hover {
+    background: linear-gradient(135deg, #fb7185 0%, #f43f5e 100%);
+    box-shadow: 0 4px 20px rgba(244, 63, 94, 0.4);
+    transform: translateY(-1px);
+  }
+
+  .thumb-shadow {
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  }
+
+  .progress-bar {
+    background: linear-gradient(90deg, #4f46e5, #7c3aed);
+    background-size: 200% 100%;
+    animation: shimmer 2s linear infinite;
+  }
+
+  .glow-text {
+    text-shadow: 0 0 40px rgba(99, 102, 241, 0.3);
+  }
+
+  .divider {
+    height: 1px;
+    background: linear-gradient(90deg, transparent, rgba(99, 102, 241, 0.3), transparent);
+  }
+
+  #playerBar {
+    background: rgba(15, 15, 30, 0.92);
+    border-top: 1px solid rgba(99, 102, 241, 0.15);
+  }
+
+  audio::-webkit-media-controls-panel {
+    background: linear-gradient(135deg, #1e1b4b, #312e81);
+  }
+  audio::-webkit-media-controls-play-button { filter: invert(1); }
+  audio::-webkit-media-controls-current-time-display,
+  audio::-webkit-media-controls-time-remaining-display {
+    color: #c7d2fe;
+    text-shadow: none;
+  }
+
+  .tag {
+    background: rgba(99, 102, 241, 0.15);
+    border: 1px solid rgba(99, 102, 241, 0.2);
+  }
+
+  .placeholder-thumb {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    height: 100%;
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: rgba(255,255,255,0.9);
+    text-shadow: 0 1px 2px rgba(0,0,0,0.3);
+  }
+
+  .bg-pattern {
+    background-image:
+      radial-gradient(circle at 20% 50%, rgba(79, 70, 229, 0.08) 0%, transparent 50%),
+      radial-gradient(circle at 80% 20%, rgba(124, 58, 237, 0.06) 0%, transparent 50%);
+  }
+
+  #bgLayer {
+    position: fixed;
+    top: -30px; left: -30px; right: -30px; bottom: -30px;
+    z-index: -1;
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
+    transition: background-image 0.8s ease-in-out;
+    filter: none;
+  }
+</style>
+</head>
+<body class="text-gray-100 min-h-screen bg-pattern">
+  <div id="bgLayer"></div>
+  <div class="max-w-4xl mx-auto px-4 py-10">
+
+    <!-- Header -->
+    <div class="text-center mb-10">
+      <div class="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-br from-indigo-500 to-purple-600 mb-4 shadow-lg shadow-indigo-500/20">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
+        </svg>
+      </div>
+      <h1 class="text-4xl font-bold tracking-tight glow-text mb-2">Music Downloader</h1>
+      <p class="text-gray-400 text-sm">搜索、试听、下载高品质音乐</p>
+    </div>
+
+    <!-- Search Box -->
+    <div class="glass rounded-2xl p-2 mb-8 search-glow transition-shadow duration-300">
+      <div class="flex gap-2">
+        <div class="relative">
+          <select id="source" class="appearance-none bg-gray-800/80 border border-gray-700/50 rounded-xl pl-4 pr-9 py-3 text-sm focus:outline-none focus:border-indigo-500 cursor-pointer hover:bg-gray-800 transition-colors">
+            <option value="netease">网易云</option>
+            <option value="kuwo">酷我</option>
+            <option value="joox">JOOX</option>
+          </select>
+          <svg class="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+        </div>
+        <input id="keyword" type="text" placeholder="输入歌名、歌手或专辑…" autofocus
+          class="flex-1 bg-transparent border-0 px-4 py-3 text-sm focus:outline-none placeholder-gray-500 text-gray-100">
+        <button onclick="doSearch()" id="searchBtn"
+          class="btn-primary px-6 py-3 rounded-xl text-sm font-semibold text-white flex items-center gap-2">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+          </svg>
+          搜索
+        </button>
+      </div>
+    </div>
+
+    <!-- Status -->
+    <div id="status" class="hidden text-center text-sm text-gray-400 py-6">
+      <div class="inline-flex items-center gap-2">
+        <svg class="animate-spin h-4 w-4 text-indigo-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+        </svg>
+        <span>搜索中...</span>
+      </div>
+    </div>
+
+    <!-- Results -->
+    <div id="results" class="space-y-3 mb-6"></div>
+
+    <!-- Load More -->
+    <div id="loadMore" class="hidden text-center mb-10">
+      <button onclick="loadMore()" class="glass px-8 py-2.5 rounded-xl text-sm hover:bg-gray-800/80 transition-all hover:scale-105 active:scale-95">
+        加载更多
+      </button>
+    </div>
+
+    <!-- Downloads Section -->
+    <div id="downloadsSection" class="hidden">
+      <div class="flex items-center gap-3 mb-5">
+        <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+          </svg>
+        </div>
+        <h2 class="text-lg font-semibold">下载列表</h2>
+        <button onclick="loadDownloaded()" class="ml-auto text-xs text-indigo-400 hover:text-indigo-300 flex items-center gap-1 transition-colors">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+          </svg>
+          刷新
+        </button>
+      </div>
+      <div id="downloadsList" class="space-y-2"></div>
+    </div>
+  </div>
+
+  <!-- Toast -->
+  <div id="toast" class="hidden fixed bottom-24 right-6 glass-strong rounded-xl px-5 py-3.5 text-sm shadow-2xl z-40 max-w-sm">
+    <div class="flex items-center gap-3">
+      <div id="toastIcon" class="w-2 h-2 rounded-full bg-indigo-400 flex-shrink-0"></div>
+      <span id="toastText"></span>
+    </div>
+  </div>
+
+  <!-- Player Bar -->
+  <div id="playerBar" class="hidden fixed bottom-0 left-0 right-0 glass-strong border-t border-indigo-500/20 shadow-[0_-8px_32px_rgba(0,0,0,0.4)] px-4 py-3 z-50">
+    <div class="max-w-4xl mx-auto flex items-center gap-4">
+      <div id="playerThumb" class="w-12 h-12 rounded-xl bg-gradient-to-br from-gray-800 to-gray-900 flex-shrink-0 flex items-center justify-center text-lg overflow-hidden border border-gray-700/50 thumb-shadow">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
+        </svg>
+      </div>
+      <div class="flex-1 min-w-0">
+        <div id="playerTitle" class="text-sm font-semibold truncate text-gray-100"></div>
+        <div id="playerArtist" class="text-xs text-indigo-300/70 truncate"></div>
+      </div>
+      <audio id="playerAudio" controls class="h-9 min-w-[240px] max-w-[400px] rounded-lg" style="filter: invert(0.9) hue-rotate(180deg)"></audio>
+      <button id="playerClose" onclick="stopPlayer()" class="w-8 h-8 rounded-full flex items-center justify-center text-gray-400 hover:bg-red-500/20 hover:text-red-400 transition-colors flex-shrink-0">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+        </svg>
+      </button>
+    </div>
+  </div>
+
+<script>
+let currentPage = 1;
+let currentKeyword = '';
+let currentSource = '';
+
+function doSearch(page = 1) {
+  const keyword = document.getElementById('keyword').value.trim();
+  if (!keyword) return;
+
+  const source = document.getElementById('source').value;
+  const btn = document.getElementById('searchBtn');
+  const statusEl = document.getElementById('status');
+  const resultsEl = document.getElementById('results');
+  const loadMoreEl = document.getElementById('loadMore');
+
+  currentKeyword = keyword;
+  currentSource = source;
+  currentPage = page;
+
+  btn.disabled = true;
+  btn.innerHTML = `<svg class="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>`;
+  statusEl.classList.remove('hidden');
+
+  if (page === 1) resultsEl.innerHTML = '';
+  loadMoreEl.classList.add('hidden');
+
+  fetch(`/api/search?name=${encodeURIComponent(keyword)}&source=${source}&count=20&pages=${page}`)
+    .then(r => r.json())
+    .then(data => {
+      if (data.error) throw new Error(data.error);
+      if (!Array.isArray(data)) throw new Error('返回数据格式异常');
+
+      statusEl.classList.add('hidden');
+      if (data.length === 0 && page === 1) {
+        resultsEl.innerHTML = `
+          <div class="text-center py-16 fade-in">
+            <div class="inline-flex items-center justify-center w-16 h-16 rounded-full bg-gray-800/50 mb-4">
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+            </div>
+            <p class="text-gray-500">未找到结果</p>
+          </div>`;
+        return;
+      }
+      if (data.length === 0 && page > 1) {
+        showToast('暂无更多（可能是访问频繁，稍后重试）', 'warning');
+        loadMoreEl.classList.remove('hidden');
+        return;
+      }
+
+      renderResults(data, page > 1);
+      if (data.length >= 20) loadMoreEl.classList.remove('hidden');
+    })
+    .catch(err => {
+      statusEl.innerHTML = `<span class="text-red-400">${err.message}</span>`;
+    })
+    .finally(() => {
+      btn.disabled = false;
+      btn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg> 搜索`;
+    });
+}
+
+function loadMore() {
+  doSearch(currentPage + 1);
+}
+
+function renderResults(data, append) {
+  const resultsEl = document.getElementById('results');
+  const baseIndex = append ? (currentPage - 1) * 20 : 0;
+
+  data.forEach((item, i) => {
+    const idx = baseIndex + i;
+    const artists = Array.isArray(item.artist) ? item.artist.join(' / ') : (item.artist || '未知');
+    const card = document.createElement('div');
+    card.className = 'glass rounded-2xl p-4 flex items-center gap-4 card-hover fade-in';
+    card.style.animationDelay = `${i * 0.05}s`;
+    card.innerHTML = `
+      <div class="w-14 h-14 rounded-xl bg-gradient-to-br from-gray-800 to-gray-900 flex-shrink-0 flex items-center justify-center text-lg overflow-hidden thumb-shadow" id="thumb-${idx}">
+        <div class="placeholder-thumb" style="${generatePlaceholderStyle(item.name)}">${(item.name || '?')[0]}</div>
+      </div>
+      <div class="flex-1 min-w-0">
+        <div class="font-medium text-sm truncate text-gray-100 mb-0.5">${esc(item.name || '?')}</div>
+        <div class="text-xs text-gray-400 truncate mb-0.5">${esc(artists)}</div>
+        <div class="flex items-center gap-2">
+          <span class="text-[10px] text-gray-500 truncate">${esc(item.album || '')}</span>
+          <span class="tag text-[10px] px-1.5 py-0.5 rounded text-indigo-300/80">${esc(item.source || '?')}</span>
+        </div>
+      </div>
+      <div class="flex gap-2 flex-shrink-0">
+        <button onclick="playTrack('${esc(item.id)}','${esc(item.source || '')}','${esc(item.name)}','${esc(artists)}','${esc(item.pic_id || '')}',${idx})"
+          class="btn-play text-xs px-3 py-2 rounded-lg transition-colors text-white flex items-center gap-1">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+            <path stroke-linecap="round" stroke-linejoin="round" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+        </button>
+        <button onclick="downloadTrack('${esc(item.id)}','${esc(item.source || '')}','${esc(item.name)}','${esc(artists)}')"
+          class="btn-primary text-xs px-3 py-2 rounded-lg transition-colors text-white flex items-center gap-1">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+          </svg>
+          下载
+        </button>
+      </div>
+    `;
+    resultsEl.appendChild(card);
+
+    if (item.pic_id) {
+      fetch(`/api/pic?id=${item.pic_id}&source=${item.source || 'netease'}&size=300`)
+        .then(r => r.json())
+        .then(pic => {
+          if (pic.url) {
+            const thumb = document.getElementById(`thumb-${idx}`);
+            if (thumb) thumb.innerHTML = `<img src="${pic.url}" class="w-full h-full object-cover" onerror="this.parentElement.innerHTML='<svg class=\\'h-6 w-6 text-gray-600\\' fill=\\'none\\' viewBox=\\'0 0 24 24\\' stroke=\\'currentColor\\'><path stroke-linecap=\\'round\\' stroke-linejoin=\\'round\\' stroke-width=\\'2\\' d=\\'M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3\\'/></svg>'">`;
+          }
+        }).catch(() => {});
+    } else {
+      const artists = Array.isArray(item.artist) ? item.artist.join(' ') : (item.artist || '');
+      fetch(`/api/cover?name=${encodeURIComponent(item.name || '')}&artist=${encodeURIComponent(artists)}&source=${item.source || 'netease'}`)
+        .then(r => r.json())
+        .then(pic => {
+          if (pic.url) {
+            const thumb = document.getElementById(`thumb-${idx}`);
+            if (thumb) thumb.innerHTML = `<img src="${pic.url}" class="w-full h-full object-cover" onerror="this.parentElement.innerHTML='<svg class=\\'h-6 w-6 text-gray-600\\' fill=\\'none\\' viewBox=\\'0 0 24 24\\' stroke=\\'currentColor\\'><path stroke-linecap=\\'round\\' stroke-linejoin=\\'round\\' stroke-width=\\'2\\' d=\\'M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3\\'/></svg>'">`;
+          }
+        }).catch(() => {});
+    }
+  });
+}
+
+function playTrack(id, source, name, artist, picId, cardIdx) {
+  const bar = document.getElementById('playerBar');
+  const audio = document.getElementById('playerAudio');
+  const title = document.getElementById('playerTitle');
+  const artistEl = document.getElementById('playerArtist');
+  const thumb = document.getElementById('playerThumb');
+
+  title.textContent = name;
+  artistEl.textContent = artist;
+  bar.classList.remove('hidden');
+  audio.src = '';
+
+  function setCover(url) {
+    const imgHtml = `<img src="${url}" class="w-full h-full object-cover">`;
+    thumb.innerHTML = imgHtml;
+    const cardThumb = document.getElementById(`thumb-${cardIdx}`);
+    if (cardThumb) cardThumb.innerHTML = imgHtml;
+  }
+
+  if (picId) {
+    fetch(`/api/pic?id=${picId}&source=${source}&size=300`)
+      .then(r => r.json())
+      .then(pic => {
+        if (pic.url) setCover(pic.url);
+      }).catch(() => {});
+  } else {
+    fetch(`/api/cover?name=${encodeURIComponent(name)}&artist=${encodeURIComponent(artist)}&source=${source}`)
+      .then(r => r.json())
+      .then(pic => {
+        if (pic.url) setCover(pic.url);
+      }).catch(() => {});
+  }
+
+  fetch(`/api/url?id=${id}&source=${source}&br=320`)
+    .then(r => r.json())
+    .then(data => {
+      if (data.url) {
+        audio.src = data.url;
+        audio.play().catch(() => {});
+      } else {
+        showToast('无法获取播放链接', 'error');
+      }
+    })
+    .catch(() => showToast('获取播放链接失败', 'error'));
+}
+
+function stopPlayer() {
+  const audio = document.getElementById('playerAudio');
+  audio.pause();
+  audio.src = '';
+  document.getElementById('playerBar').classList.add('hidden');
+}
+
+function downloadTrack(id, source, name, artist) {
+  showToast(`开始下载: ${name}`, 'info');
+
+  fetch('/api/download', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({id, source, br: '320', pic: true, name, artist})
+  })
+    .then(r => r.json())
+    .then(data => {
+      if (data.status === 'exists') {
+        showToast(`已存在: ${data.filename}`, 'warning');
+        return;
+      }
+      if (data.error) throw new Error(data.error);
+      showToast(`下载中: ${data.filename}`, 'info');
+      pollDownload(id, name);
+    })
+    .catch(err => showToast(err.message, 'error'));
+}
+
+function pollDownload(id, name) {
+  const interval = setInterval(() => {
+    fetch(`/api/download/${id}/status`)
+      .then(r => r.json())
+      .then(s => {
+        if (s.status === 'done') {
+          clearInterval(interval);
+          showToast(`${name} 下载完成`, 'success');
+          loadDownloaded();
+        } else if (s.status === 'error') {
+          clearInterval(interval);
+          showToast(`${name}: ${s.error}`, 'error');
+        }
+      });
+  }, 1000);
+}
+
+function loadDownloaded() {
+  const section = document.getElementById('downloadsSection');
+  const list = document.getElementById('downloadsList');
+
+  fetch('/api/downloaded')
+    .then(r => r.json())
+    .then(files => {
+      if (files.length === 0) {
+        section.classList.add('hidden');
+        return;
+      }
+      section.classList.remove('hidden');
+      list.innerHTML = files.map((f, i) => `
+        <div class="glass rounded-xl px-4 py-3 flex items-center gap-3 text-sm card-hover fade-in" style="animation-delay:${i*0.03}s">
+          <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-gray-800 to-gray-900 flex items-center justify-center flex-shrink-0">
+            ${f.ext === '.lrc' ? '<svg class="h-4 w-4 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>'
+              : f.ext === '.jpg' || f.ext === '.png' ? '<svg class="h-4 w-4 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>'
+              : '<svg class="h-4 w-4 text-indigo-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" /></svg>'}
+          </div>
+          <span class="flex-1 truncate text-gray-200">${esc(f.name)}</span>
+          <span class="text-xs text-gray-500 flex-shrink-0">${fmtSize(f.size)}</span>
+          <a href="/api/file/${encodeURIComponent(f.name)}" class="text-indigo-400 hover:text-indigo-300 text-xs flex-shrink-0 flex items-center gap-1 transition-colors">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+            </svg>
+            下载
+          </a>
+        </div>
+      `).join('');
+    });
+}
+
+function fmtSize(bytes) {
+  if (bytes < 1024) return bytes + ' B';
+  if (bytes < 1048576) return (bytes / 1024).toFixed(1) + ' KB';
+  return (bytes / 1048576).toFixed(1) + ' MB';
+}
+
+function showToast(msg, type = 'info') {
+  const el = document.getElementById('toast');
+  const icon = document.getElementById('toastIcon');
+  const text = document.getElementById('toastText');
+
+  text.textContent = msg;
+
+  const colors = {
+    info: 'bg-indigo-400',
+    success: 'bg-green-400',
+    error: 'bg-red-400',
+    warning: 'bg-yellow-400'
+  };
+  icon.className = `w-2 h-2 rounded-full flex-shrink-0 ${colors[type] || colors.info}`;
+
+  el.classList.remove('hidden');
+  clearTimeout(el._timeout);
+  el._timeout = setTimeout(() => el.classList.add('hidden'), 3000);
+}
+
+function generatePlaceholderStyle(name) {
+  const s = name || '?';
+  let hash = 0;
+  for (let i = 0; i < s.length; i++) hash = s.charCodeAt(i) + ((hash << 5) - hash);
+  const h = Math.abs(hash) % 360;
+  const h2 = (h + 40) % 360;
+  return `background: linear-gradient(135deg, hsl(${h}, 70%, 45%), hsl(${h2}, 65%, 35%));`;
+}
+
+function esc(s) {
+  if (!s) return '';
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+
+document.getElementById('keyword').addEventListener('keydown', e => {
+  if (e.key === 'Enter') doSearch();
+});
+
+loadDownloaded();
+
+(function initBg() {
+  const bg = document.getElementById('bgLayer');
+  if (bg) bg.style.backgroundImage = "url('/static/wallpaper.webp')";
+})();
+</script>
+</body>
+</html>

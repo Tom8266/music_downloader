@@ -1,0 +1,38 @@
+{
+  "name": "music-downloader",
+  "version": "1.0.0",
+  "description": "GD Studio Music API — 搜索、试听、下载",
+  "main": "electron/main.js",
+  "scripts": {
+    "start": "electron .",
+    "pack": "electron-builder --dir",
+    "dist": "electron-builder",
+    "dist:linux": "electron-builder --linux"
+  },
+  "build": {
+    "appId": "xyz.gdstudio.music-downloader",
+    "productName": "Music Downloader",
+    "asar": false,
+    "files": [
+      "electron/**/*",
+      "templates/**/*",
+      "webui.py",
+      "music_dl.py",
+      "requirements.txt"
+    ],
+    "extraResources": [
+      {
+        "from": ".venv",
+        "to": ".venv"
+      }
+    ],
+    "linux": {
+      "target": ["AppImage", "deb"],
+      "category": "Audio"
+    }
+  },
+  "devDependencies": {
+    "electron": "^42.3.3",
+    "electron-builder": "^26.8.1"
+  }
+}
