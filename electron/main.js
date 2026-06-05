@@ -1,4 +1,4 @@
-const { app, BrowserWindow, dialog } = require('electron');
+const { app, BrowserWindow, dialog, ipcMain } = require('electron');
 const path = require('path');
 const { spawn } = require('child_process');
 const http = require('http');
@@ -7,30 +7,45 @@ let mainWindow;
 let serverProcess;
 const SERVER_PORT = 8080;
 
-function getResourcePath(...segments) {
+function getAppPath(...segments) {
+  if (app.isPackaged) {
+    return path.join(process.resourcesPath, 'app', ...segments);
+  }
+  return path.join(__dirname, '..', ...segments);
+}
+
+function getRootPath(...segments) {
   if (app.isPackaged) {
     return path.join(process.resourcesPath, ...segments);
   }
   return path.join(__dirname, '..', ...segments);
 }
 
+ipcMain.handle('select-directory', async () => {
+  if (!mainWindow) return { canceled: true };
+  const result = await dialog.showOpenDialog(mainWindow, {
+    properties: ['openDirectory'],
+    title: '选择下载目录',
+  });
+  return result;
+});
+
 function findPython() {
+  const base = app.isPackaged ? process.resourcesPath : path.join(__dirname, '..');
   if (process.platform === 'win32') {
-    const venvPath = getResourcePath('.venv', 'Scripts', 'python.exe');
-    return venvPath;
+    return path.join(base, '.venv', 'Scripts', 'python.exe');
   }
-  const venvPython = getResourcePath('.venv', 'bin', 'python3');
-  return venvPython;
+  return path.join(base, '.venv', 'bin', 'python3');
 }
 
 function startServer() {
   const python = findPython();
-  const webuiPath = getResourcePath('webui.py');
+  const webuiPath = getAppPath('webui.py');
 
   serverProcess = spawn(python, [
     webuiPath, '--host', '127.0.0.1', '--port', String(SERVER_PORT),
   ], {
-    cwd: getResourcePath(),
+    cwd: getRootPath(),
     stdio: ['pipe', 'pipe', 'pipe'],
     env: { ...process.env, PYTHONUNBUFFERED: '1' },
   });
@@ -77,6 +92,7 @@ function createWindow() {
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
+      preload: path.join(__dirname, 'preload.js'),
     },
   });
 

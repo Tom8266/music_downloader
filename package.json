@@ -17,6 +17,7 @@
     "files": [
       "electron/**/*",
       "templates/**/*",
+      "static/**/*",
       "webui.py",
       "music_dl.py",
       "requirements.txt"

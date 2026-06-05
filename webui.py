@@ -10,11 +10,27 @@ from flask import Flask, render_template, request, jsonify, send_file
 from music_dl import search, get_song_url, get_lyric, get_pic, sanitize_filename, embed_metadata, fetch_cover, API_BASE, download_file, SOURCES, DEFAULT_SOURCE
 
 app = Flask(__name__)
-DOWNLOAD_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "downloads")
+DOWNLOAD_DIR = os.environ.get("MUSIC_DOWNLOAD_DIR", os.path.join(os.path.expanduser("~"), "MusicDownloads"))
 os.makedirs(DOWNLOAD_DIR, exist_ok=True)
 
 downloads_status = {}
 downloads_lock = threading.Lock()
+
+
+def resolve_outdir(outdir):
+    if not outdir:
+        return DOWNLOAD_DIR
+    if os.path.isabs(outdir):
+        return os.path.normpath(outdir)
+    return os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), outdir))
+
+
+def validate_path(filepath, base_dir):
+    real_fp = os.path.realpath(filepath)
+    real_base = os.path.realpath(base_dir)
+    if not real_fp.startswith(real_base + os.sep) and real_fp != real_base:
+        return False
+    return True
 
 
 @app.route("/")
@@ -112,8 +128,14 @@ def api_download():
     elif "m4a" in url.lower():
         ext = ".m4a"
 
+    outdir = resolve_outdir(data.get("outdir", ""))
+    os.makedirs(outdir, exist_ok=True)
+
     filename = sanitize_filename(f"{name}{artist_str}{ext}")
-    filepath = os.path.join(DOWNLOAD_DIR, filename)
+    filepath = os.path.join(outdir, filename)
+
+    if not validate_path(filepath, outdir):
+        return jsonify({"error": "非法下载路径"}), 400
 
     if os.path.exists(filepath):
         return jsonify({"status": "exists", "filename": filename})
@@ -183,10 +205,12 @@ def api_download_status(track_id):
 
 @app.route("/api/downloaded")
 def api_downloaded():
+    outdir = resolve_outdir(request.args.get("outdir", ""))
+    os.makedirs(outdir, exist_ok=True)
     files = []
-    if os.path.isdir(DOWNLOAD_DIR):
-        for f in sorted(os.listdir(DOWNLOAD_DIR), key=lambda x: os.path.getmtime(os.path.join(DOWNLOAD_DIR, x)), reverse=True):
-            fpath = os.path.join(DOWNLOAD_DIR, f)
+    if os.path.isdir(outdir):
+        for f in sorted(os.listdir(outdir), key=lambda x: os.path.getmtime(os.path.join(outdir, x)), reverse=True):
+            fpath = os.path.join(outdir, f)
             if os.path.isfile(fpath):
                 files.append({
                     "name": f,
@@ -199,7 +223,10 @@ def api_downloaded():
 
 @app.route("/api/file/<path:filename>")
 def serve_file(filename):
-    filepath = os.path.join(DOWNLOAD_DIR, filename)
+    outdir = resolve_outdir(request.args.get("outdir", ""))
+    filepath = os.path.join(outdir, filename)
+    if not validate_path(filepath, outdir):
+        return jsonify({"error": "非法文件路径"}), 400
     if not os.path.isfile(filepath):
         return jsonify({"error": "文件不存在"}), 404
     return send_file(filepath, as_attachment=True)
