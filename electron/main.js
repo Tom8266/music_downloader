@@ -58,12 +58,17 @@ function startServer() {
 }
 
 function createWindow() {
+  const iconPath = app.isPackaged
+    ? path.join(process.resourcesPath, 'electron', 'icon.png')
+    : path.join(__dirname, 'icon.png');
+
   mainWindow = new BrowserWindow({
     width: 1100,
     height: 750,
     minWidth: 800,
     minHeight: 600,
     title: 'Music Downloader',
+    icon: iconPath,
     backgroundColor: '#0f0f1a',
     webPreferences: {
       nodeIntegration: false,
