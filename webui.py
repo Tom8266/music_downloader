@@ -4,12 +4,13 @@
 import argparse
 import logging
 import os
+import time
 import json
 import threading
 import requests
 from flask import Flask, render_template, request, jsonify, send_file
 
-from music_dl import search, get_song_url, get_lyric, get_pic, sanitize_filename, embed_metadata, fetch_cover, API_BASE, download_file, SOURCES, DEFAULT_SOURCE, setup_logging
+from music_dl import search, get_song_url, get_lyric, get_pic, sanitize_filename, embed_metadata, fetch_cover, API_BASE, download_file, SOURCES, DEFAULT_SOURCE, setup_logging, format_artist_str
 
 logger = logging.getLogger("webui")
 app = Flask(__name__)
@@ -36,6 +37,44 @@ downloads_status = {}
 downloads_lock = threading.Lock()
 
 
+def _download_cover(pic_id, name, artists, source):
+    """获取封面: 优先用 pic_id，fallback 到搜索。"""
+    if pic_id:
+        try:
+            pic = get_pic(pic_id, source, "500")
+            pic_url = pic.get("url", "")
+            if pic_url:
+                pic_resp = requests.get(pic_url, timeout=30)
+                pic_resp.raise_for_status()
+                logger.debug("封面(来自pic_id): %d bytes", len(pic_resp.content))
+                return pic_resp.content
+        except Exception:
+            pass
+    artist_name = format_artist_str(artists)
+    if isinstance(artists, list) and artists:
+        artist_name = artists[0]
+    try:
+        pic_data, _ = fetch_cover(name, artist_name, source)
+        return pic_data
+    except Exception:
+        return None
+
+
+def _embed_track_metadata(filepath, name, artists, album, pic_data):
+    """嵌入元数据到音频文件。"""
+    artist_display = format_artist_str(artists)
+    try:
+        embed_metadata(
+            filepath,
+            title=name,
+            artist=artist_display,
+            album=album or "",
+            pic_data=pic_data,
+        )
+    except Exception:
+        pass
+
+
 def resolve_outdir(outdir):
     if not outdir:
         return DOWNLOAD_DIR
@@ -45,11 +84,10 @@ def resolve_outdir(outdir):
 
 
 def validate_path(filepath, base_dir):
-    real_fp = os.path.realpath(filepath)
-    real_base = os.path.realpath(base_dir)
-    if not real_fp.startswith(real_base + os.sep) and real_fp != real_base:
+    try:
+        return os.path.commonpath([os.path.realpath(filepath), os.path.realpath(base_dir)]) == os.path.realpath(base_dir)
+    except ValueError:
         return False
-    return True
 
 
 @app.route("/")
@@ -142,11 +180,8 @@ def api_download():
         logger.exception("下载请求失败: id=%s", track_id)
         return jsonify({"error": str(e)}), 500
 
-    artist_str = ""
-    if isinstance(artists, list) and artists:
-        artist_str = " - " + " / ".join(artists)
-    elif isinstance(artists, str) and artists.strip():
-        artist_str = " - " + artists
+    artist_str = format_artist_str(artists)
+    filename_suffix = f" - {artist_str}" if artist_str else ""
 
     ext = ".mp3"
     if "flac" in url.lower():
@@ -157,7 +192,7 @@ def api_download():
     outdir = resolve_outdir(data.get("outdir", ""))
     os.makedirs(outdir, exist_ok=True)
 
-    filename = sanitize_filename(f"{name}{artist_str}{ext}")
+    filename = sanitize_filename(f"{name}{filename_suffix}{ext}")
     filepath = os.path.join(outdir, filename)
 
     if not validate_path(filepath, outdir):
@@ -206,62 +241,41 @@ def api_download():
 
             download_file(url, filepath, progress_callback=on_progress)
 
-            status_update = {"status": "done", "progress": 100}
-
-            pic_data = None
-
-            # 优先用搜索结果里的 pic_id，和搜索页面显示的一致
-            try:
-                if pic_id:
-                    pic = get_pic(pic_id, source, "500")
-                    pic_url = pic.get("url", "")
-                    if pic_url:
-                        pic_resp = requests.get(pic_url, timeout=30)
-                        pic_resp.raise_for_status()
-                        pic_data = pic_resp.content
-                        logger.debug("封面(来自pic_id): %d bytes", len(pic_data))
-                if not pic_data:
-                    artist_name = ""
-                    if isinstance(artists, list):
-                        artist_name = artists[0] if artists else ""
-                    elif isinstance(artists, str):
-                        artist_name = artists
-                    pic_data, _ = fetch_cover(name, artist_name, source)
-            except Exception:
-                pass
-
-            artist_display = ""
-            if isinstance(artists, list):
-                artist_display = " / ".join(artists)
-            elif isinstance(artists, str):
-                artist_display = artists
-            try:
-                embed_metadata(
-                    filepath,
-                    title=name,
-                    artist=artist_display,
-                    album=data.get("album", ""),
-                    pic_data=pic_data,
-                )
-            except Exception:
-                pass
+            pic_data = _download_cover(pic_id, name, artists, source)
+            _embed_track_metadata(filepath, name, artists, data.get("album", ""), pic_data)
 
             with downloads_lock:
-                downloads_status[track_id].update(status_update)
+                downloads_status[track_id]["status"] = "done"
+                downloads_status[track_id]["progress"] = 100
+                downloads_status[track_id]["_finished_at"] = time.time()
             logger.info("下载线程完成: %s", filename)
         except Exception as e:
             logger.exception("下载线程失败: %s", name)
             with downloads_lock:
-                downloads_status[track_id] = {"status": "error", "error": str(e), "name": name}
+                downloads_status[track_id] = {"status": "error", "error": str(e), "name": name, "_finished_at": time.time()}
 
     threading.Thread(target=do_download, daemon=True).start()
     return jsonify({"status": "started", "id": track_id, "filename": filename})
+
+
+def _cleanup_old_downloads():
+    """清理超过 5 分钟的已完成/失败下载状态。"""
+    now = time.time()
+    with downloads_lock:
+        expired = [
+            tid for tid, st in downloads_status.items()
+            if st.get("status") in ("done", "error")
+            and now - st.get("_finished_at", now) > 300
+        ]
+        for tid in expired:
+            del downloads_status[tid]
 
 
 @app.route("/api/download/<track_id>/status")
 def api_download_status(track_id):
     with downloads_lock:
         status = downloads_status.get(track_id, {"status": "unknown"})
+    _cleanup_old_downloads()
     return jsonify(status)
 
 
@@ -298,31 +312,43 @@ def serve_file(filename):
 def api_cover():
     name = request.args.get("name", "").strip()
     artist = request.args.get("artist", "").strip()
-    preferred_source = request.args.get("source", DEFAULT_SOURCE)
+    source = request.args.get("source", DEFAULT_SOURCE)
     if not name:
         return jsonify({"error": "缺少歌曲名称"}), 400
-    for src in [preferred_source] + [s for s in SOURCES if s != preferred_source]:
-        try:
-            query = f"{name} {artist}".strip()
-            r = search(query, src, count=5)
-            if not isinstance(r, list) or not r:
+    url = _fetch_cover_url(name, artist, source)
+    if not url:
+        # fallback 到其他音源
+        for src in [s for s in SOURCES if s != source]:
+            url = _fetch_cover_url(name, artist, src)
+            if url:
+                source = src
+                break
+    return jsonify({"url": url or "", "source": source})
+
+
+def _fetch_cover_url(name, artist, source):
+    """获取封面 URL（不下载图片）。"""
+    try:
+        query = f"{name} {artist}".strip()
+        r = search(query, source, count=5)
+        if not isinstance(r, list) or not r:
+            return None
+        for item in r:
+            item_artists = item.get("artist", [])
+            if not isinstance(item_artists, list):
+                item_artists = [item_artists]
+            if artist and not any(artist.lower() in str(a).lower() for a in item_artists):
                 continue
-            for item in r:
-                item_artists = item.get("artist", [])
-                if not isinstance(item_artists, list):
-                    item_artists = [item_artists]
-                if artist and not any(artist.lower() in str(a).lower() for a in item_artists):
-                    continue
-                pic_id = item.get("pic_id", "")
-                if not pic_id:
-                    continue
-                pic = get_pic(pic_id, src, "300")
-                pic_url = pic.get("url", "")
-                if pic_url:
-                    return jsonify({"url": pic_url, "source": src})
-        except Exception:
-            continue
-    return jsonify({"url": ""})
+            pic_id = item.get("pic_id", "")
+            if not pic_id:
+                continue
+            pic = get_pic(pic_id, source, "300")
+            pic_url = pic.get("url", "")
+            if pic_url:
+                return pic_url
+    except Exception:
+        pass
+    return None
 
 
 @app.route("/api/dirs")

@@ -88,6 +88,14 @@ def sanitize_filename(name):
     return "".join(c for c in name if c not in r'\/:*?"<>|').strip()
 
 
+def format_artist_str(artists, separator=" / "):
+    if isinstance(artists, list):
+        return separator.join(artists) if artists else ""
+    if isinstance(artists, str) and artists.strip():
+        return artists.strip()
+    return ""
+
+
 def download_file(url, filepath, progress_callback=None):
     t0 = time.time()
     logger.info("开始下载: %s", os.path.basename(filepath))
@@ -97,33 +105,32 @@ def download_file(url, filepath, progress_callback=None):
     total = int(resp.headers.get("content-length", 0))
     logger.debug("文件大小: %.1f MB", total / 1048576 if total else 0)
 
-    downloaded = 0
-
-    def download_chunks():
-        nonlocal downloaded
-        with open(filepath, "wb") as f:
-            for chunk in resp.iter_content(chunk_size=8192):
-                f.write(chunk)
-                downloaded += len(chunk)
-                if progress_callback:
-                    progress_callback(downloaded, total)
-
-    if progress_callback:
-        download_chunks()
-    else:
-        with Progress(
+    progress_ctx = None
+    task = None
+    if not progress_callback:
+        progress_ctx = Progress(
             TextColumn("  [bold green]⬇[/bold green]"),
             BarColumn(),
             "[progress.percentage]{task.percentage:>3.0f}%",
             DownloadColumn(),
             TransferSpeedColumn(),
             TimeRemainingColumn(),
-        ) as progress:
-            task = progress.add_task("", total=total or None)
-            with open(filepath, "wb") as f:
-                for chunk in resp.iter_content(chunk_size=8192):
-                    f.write(chunk)
-                    progress.update(task, advance=len(chunk))
+        )
+        progress_ctx.__enter__()
+        task = progress_ctx.add_task("", total=total or None)
+
+    downloaded = 0
+    with open(filepath, "wb") as f:
+        for chunk in resp.iter_content(chunk_size=8192):
+            f.write(chunk)
+            downloaded += len(chunk)
+            if progress_callback:
+                progress_callback(downloaded, total)
+            elif task is not None:
+                progress_ctx.update(task, advance=len(chunk))
+
+    if progress_ctx:
+        progress_ctx.__exit__(None, None, None)
 
     elapsed = time.time() - t0
     size_mb = os.path.getsize(filepath) / 1048576
@@ -269,13 +276,9 @@ def cmd_search(args):
 
 
 def cmd_download(args):
-    artist_str = ""
-    if args.artist:
-        artist_str = " - " + args.artist
-    elif not args.name:
-        artist_str = ""
-
     name = args.name or args.id
+    artist_str = format_artist_str(args.artist)
+    filename_suffix = f" - {args.artist}" if args.artist else ""
 
     result = get_song_url(args.id, args.source, args.br)
     url = result.get("url")
@@ -290,7 +293,7 @@ def cmd_download(args):
     elif "m4a" in url.lower():
         ext = ".m4a"
 
-    filename = sanitize_filename(f"{name}{artist_str}{ext}")
+    filename = sanitize_filename(f"{name}{filename_suffix}{ext}")
     filepath = os.path.join(args.outdir, filename)
 
     if os.path.exists(filepath):
@@ -302,7 +305,7 @@ def cmd_download(args):
 
     size_kb = result.get("size", "?")
     actual_br = result.get("br", "?")
-    print(f"歌曲: {name}{artist_str}")
+    print(f"歌曲: {name}{filename_suffix}")
     print(f"音质: {actual_br}  大小: {size_kb} KB")
 
     download_file(url, filepath)
