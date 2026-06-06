@@ -5,313 +5,1372 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Music Downloader</title>
 <link rel="icon" type="image/svg+xml" href="/static/icon.svg">
-<script src="https://cdn.tailwindcss.com"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&display=swap" rel="stylesheet">
 <style>
-  @keyframes spin { to { transform: rotate(360deg); } }
-  .loading { animation: spin 1s linear infinite; }
+/* ═══════════════════════════════════════════════════
+   Material Design 3 — Design Tokens
+   ═══════════════════════════════════════════════════ */
+:root {
+  /* ── Primary (Deep Purple) ── */
+  --md-primary: #D0BCFF;
+  --md-on-primary: #381E72;
+  --md-primary-container: #4F378B;
+  --md-on-primary-container: #EADDFF;
 
-  @keyframes fadeIn {
-    from { opacity: 0; transform: translateY(12px); }
-    to { opacity: 1; transform: translateY(0); }
-  }
-  .fade-in { animation: fadeIn 0.4s ease-out forwards; }
+  /* ── Secondary ── */
+  --md-secondary: #CCC2DC;
+  --md-on-secondary: #332D41;
+  --md-secondary-container: #4A4458;
+  --md-on-secondary-container: #E8DEF8;
 
-  @keyframes pulse-ring {
-    0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(99, 102, 241, 0.4); }
-    70% { transform: scale(1); box-shadow: 0 0 0 10px rgba(99, 102, 241, 0); }
-    100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(99, 102, 241, 0); }
-  }
+  /* ── Tertiary ── */
+  --md-tertiary: #EFB8C8;
+  --md-on-tertiary: #492532;
+  --md-tertiary-container: #633B48;
+  --md-on-tertiary-container: #FFD8E4;
 
-  @keyframes shimmer {
-    0% { background-position: -200% 0; }
-    100% { background-position: 200% 0; }
-  }
+  /* ── Error ── */
+  --md-error: #F2B8B5;
+  --md-on-error: #601410;
+  --md-error-container: #8C1D18;
+  --md-on-error-container: #F9DEDC;
 
-  body {
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-    background: radial-gradient(ellipse at top, #1e1b4b 0%, #0f0f1a 50%, #000000 100%);
-  }
+  /* ── Surfaces ── */
+  --md-background: #141218;
+  --md-on-background: #E6E1E5;
+  --md-surface: #141218;
+  --md-on-surface: #E6E1E5;
+  --md-surface-variant: #49454F;
+  --md-on-surface-variant: #CAC4D0;
+  --md-surface-dim: #141218;
+  --md-surface-bright: #3B383E;
 
-  .glass {
-    background: rgba(30, 30, 50, 0.75);
-    border: 1px solid rgba(255, 255, 255, 0.08);
-  }
+  /* ── Elevation (dark theme tinted overlays) ── */
+  --md-elev-0: #141218;
+  --md-elev-1: #1C1B20;
+  --md-elev-2: #211F26;
+  --md-elev-3: #26242B;
+  --md-elev-4: #29272E;
+  --md-elev-5: #2E2C33;
 
-  .glass-strong {
-    background: rgba(20, 20, 35, 0.9);
-    border: 1px solid rgba(255, 255, 255, 0.1);
-  }
+  /* ── Outline ── */
+  --md-outline: #938F99;
+  --md-outline-variant: #49454F;
 
-  .search-glow:focus-within {
-    box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.2), 0 0 20px rgba(99, 102, 241, 0.1);
-  }
+  /* ── Inverse ── */
+  --md-inverse-surface: #E6E1E5;
+  --md-inverse-on-surface: #322F35;
+  --md-inverse-primary: #6750A4;
 
-  .card-hover {
-    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  }
-  .card-hover:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(99, 102, 241, 0.2);
-  }
+  /* ── Scrim ── */
+  --md-scrim: #000000;
 
-  .btn-primary {
-    background: linear-gradient(135deg, #0ea5e9 0%, #3b82f6 100%);
-    transition: all 0.2s ease;
-  }
-  .btn-primary:hover {
-    background: linear-gradient(135deg, #38bdf8 0%, #60a5fa 100%);
-    box-shadow: 0 4px 20px rgba(14, 165, 233, 0.4);
-    transform: translateY(-1px);
-  }
-  .btn-primary:active {
-    transform: translateY(0);
-  }
+  /* ── Shape ── */
+  --shape-xs: 4px;
+  --shape-sm: 8px;
+  --shape-md: 12px;
+  --shape-lg: 16px;
+  --shape-xl: 28px;
+  --shape-full: 9999px;
 
-  .btn-play {
-    background: linear-gradient(135deg, #f43f5e 0%, #e11d48 100%);
-    transition: all 0.2s ease;
-  }
-  .btn-play:hover {
-    background: linear-gradient(135deg, #fb7185 0%, #f43f5e 100%);
-    box-shadow: 0 4px 20px rgba(244, 63, 94, 0.4);
-    transform: translateY(-1px);
-  }
+  /* ── Elevation shadows ── */
+  --shadow-1: 0 1px 3px 1px rgba(0,0,0,.15), 0 1px 2px rgba(0,0,0,.3);
+  --shadow-2: 0 2px 6px 2px rgba(0,0,0,.15), 0 1px 2px rgba(0,0,0,.3);
+  --shadow-3: 0 4px 8px 3px rgba(0,0,0,.15), 0 1px 3px rgba(0,0,0,.3);
+  --shadow-4: 0 6px 10px 4px rgba(0,0,0,.15), 0 2px 3px rgba(0,0,0,.3);
+  --shadow-5: 0 8px 12px 6px rgba(0,0,0,.15), 0 4px 4px rgba(0,0,0,.3);
 
-  .thumb-shadow {
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-  }
+  /* ── State layers ── */
+  --state-hover: .08;
+  --state-focus: .12;
+  --state-pressed: .12;
+  --state-dragged: .16;
 
-  .progress-bar {
-    background: linear-gradient(90deg, #4f46e5, #7c3aed);
-    background-size: 200% 100%;
-    min-width: 3%;
-    transition: width 0.4s ease;
-  }
+  /* ── Motion ── */
+  --motion-standard: cubic-bezier(.2, 0, 0, 1);
+  --motion-emphasized: cubic-bezier(.2, 0, 0, 1);
+  --motion-emphasized-decel: cubic-bezier(.05, .7, .1, 1);
+  --motion-emphasized-accel: cubic-bezier(.3, 0, .8, .15);
+  --duration-short2: 100ms;
+  --duration-short4: 200ms;
+  --duration-medium2: 300ms;
+  --duration-medium4: 400ms;
+  --duration-long2: 500ms;
+}
 
-  .progress-bar.indeterminate {
-    width: 100% !important;
-    animation: shimmer 2s linear infinite;
-  }
+/* ═══════════════════════════════════════════════════
+   Reset & Base
+   ═══════════════════════════════════════════════════ */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
-  .glow-text {
-    text-shadow: 0 0 40px rgba(99, 102, 241, 0.3);
-  }
+body {
+  font-family: 'Roboto', system-ui, -apple-system, sans-serif;
+  background: var(--md-background);
+  color: var(--md-on-surface);
+  min-height: 100vh;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
 
-  .divider {
-    height: 1px;
-    background: linear-gradient(90deg, transparent, rgba(99, 102, 241, 0.3), transparent);
-  }
+/* ═══════════════════════════════════════════════════
+   Typography (MD3 type scale)
+   ═══════════════════════════════════════════════════ */
+.type-display-l   { font-size: 57px; line-height: 64px; font-weight: 400; letter-spacing: -.25px; }
+.type-headline-l  { font-size: 32px; line-height: 40px; font-weight: 400; }
+.type-headline-m  { font-size: 28px; line-height: 36px; font-weight: 400; }
+.type-headline-s  { font-size: 24px; line-height: 32px; font-weight: 400; }
+.type-title-l     { font-size: 22px; line-height: 28px; font-weight: 400; }
+.type-title-m     { font-size: 16px; line-height: 24px; font-weight: 500; }
+.type-title-s     { font-size: 14px; line-height: 20px; font-weight: 500; }
+.type-label-l     { font-size: 14px; line-height: 20px; font-weight: 500; letter-spacing: .1px; }
+.type-label-m     { font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: .5px; }
+.type-label-s     { font-size: 11px; line-height: 16px; font-weight: 500; letter-spacing: .5px; }
+.type-body-l      { font-size: 16px; line-height: 24px; font-weight: 400; }
+.type-body-m      { font-size: 14px; line-height: 20px; font-weight: 400; }
+.type-body-s      { font-size: 12px; line-height: 16px; font-weight: 400; }
 
-  #playerBar {
-    background: rgba(15, 15, 30, 0.92);
-    border-top: 1px solid rgba(99, 102, 241, 0.15);
-  }
+/* ═══════════════════════════════════════════════════
+   Material Symbols icon helper
+   ═══════════════════════════════════════════════════ */
+.msi {
+  font-family: 'Material Symbols Outlined';
+  font-weight: normal;
+  font-style: normal;
+  font-size: inherit;
+  line-height: 1;
+  letter-spacing: normal;
+  text-transform: none;
+  display: inline-block;
+  white-space: nowrap;
+  word-wrap: normal;
+  direction: ltr;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  font-feature-settings: 'liga';
+  font-variation-settings: 'FILL' 0, 'wght' 300, 'GRAD' 0, 'opsz' 24;
+  user-select: none;
+}
 
-  audio::-webkit-media-controls-panel {
-    background: linear-gradient(135deg, #1e1b4b, #312e81);
-  }
-  audio::-webkit-media-controls-play-button { filter: invert(1); }
-  audio::-webkit-media-controls-current-time-display,
-  audio::-webkit-media-controls-time-remaining-display {
-    color: #c7d2fe;
-    text-shadow: none;
-  }
+/* ═══════════════════════════════════════════════════
+   Utilities
+   ═══════════════════════════════════════════════════ */
+.hidden { display: none !important; }
+.truncate { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-  .tag {
-    background: rgba(99, 102, 241, 0.15);
-    border: 1px solid rgba(99, 102, 241, 0.2);
-  }
+/* ═══════════════════════════════════════════════════
+   Background
+   ═══════════════════════════════════════════════════ */
+#bgLayer {
+  position: fixed;
+  top: -30px; left: -30px; right: -30px; bottom: -30px;
+  z-index: -1;
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  transition: background-image .8s var(--motion-emphasized-decel);
+}
 
-  .placeholder-thumb {
-    display: flex;
-    align-items: center;
-    justify-content: center;
+/* ═══════════════════════════════════════════════════
+   Layout
+   ═══════════════════════════════════════════════════ */
+.app-container {
+  max-width: 840px;
+  margin: 0 auto;
+  padding: 40px 16px 120px;
+}
+
+/* ═══════════════════════════════════════════════════
+   Header
+   ═══════════════════════════════════════════════════ */
+.app-header {
+  text-align: center;
+  margin-bottom: 36px;
+}
+.app-header .logo-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 72px; height: 72px;
+  border-radius: var(--shape-xl);
+  background: var(--md-primary-container);
+  color: var(--md-on-primary-container);
+  margin-bottom: 16px;
+  box-shadow: var(--shadow-2);
+}
+.app-header .logo-icon .msi { font-size: 36px; }
+.app-header h1 {
+  font-size: 32px; line-height: 40px; font-weight: 400;
+  color: var(--md-on-surface);
+  margin-bottom: 4px;
+}
+.app-header p {
+  font-size: 14px; line-height: 20px; font-weight: 400;
+  color: var(--md-on-surface-variant);
+}
+
+/* ═══════════════════════════════════════════════════
+   Top Bar (settings + source segmented)
+   ═══════════════════════════════════════════════════ */
+.top-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+/* ── MD3 Segmented Buttons ── */
+.segmented-buttons {
+  display: inline-flex;
+  border-radius: var(--shape-full);
+  border: 1px solid var(--md-outline);
+  overflow: hidden;
+}
+.segmented-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  border: none;
+  background: transparent;
+  color: var(--md-on-surface);
+  font: 500 14px/20px 'Roboto', sans-serif;
+  letter-spacing: .1px;
+  cursor: pointer;
+  transition: background var(--duration-short2) var(--motion-standard);
+  position: relative;
+  white-space: nowrap;
+}
+.segmented-btn:not(:first-child)::before {
+  content: '';
+  position: absolute;
+  left: 0; top: 20%; bottom: 20%;
+  width: 1px;
+  background: var(--md-outline);
+  transition: background var(--duration-short2) var(--motion-standard);
+}
+.segmented-btn:hover {
+  background: rgba(208,188,255, var(--state-hover));
+}
+.segmented-btn.selected {
+  background: var(--md-secondary-container);
+  color: var(--md-on-secondary-container);
+}
+.segmented-btn.selected::before {
+  display: none;
+}
+.segmented-btn.selected + .segmented-btn::before {
+  display: none;
+}
+.segmented-btn .msi { font-size: 18px; }
+.segmented-btn .check-icon {
+  display: none;
+  font-size: 18px;
+  margin-left: -4px;
+}
+.segmented-btn.selected .check-icon {
+  display: inline-block;
+}
+
+.icon-btn-outlined {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 16px;
+  border-radius: var(--shape-full);
+  border: 1px solid var(--md-outline);
+  background: transparent;
+  color: var(--md-on-surface-variant);
+  font: 500 14px/20px 'Roboto', sans-serif;
+  letter-spacing: .1px;
+  cursor: pointer;
+  transition: background var(--duration-short2) var(--motion-standard),
+              border-color var(--duration-short2) var(--motion-standard);
+  position: relative;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+.icon-btn-outlined:hover {
+  background: rgba(202,196,208, var(--state-hover));
+}
+.icon-btn-outlined:active {
+  background: rgba(202,196,208, var(--state-pressed));
+}
+.icon-btn-outlined .msi { font-size: 18px; }
+
+/* ═══════════════════════════════════════════════════
+   Search Bar (MD3 search bar pattern)
+   ═══════════════════════════════════════════════════ */
+.search-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: var(--md-elev-2);
+  border-radius: var(--shape-xl);
+  padding: 4px 20px;
+  box-shadow: var(--shadow-1);
+  transition: box-shadow var(--duration-short4) var(--motion-standard);
+  margin-bottom: 28px;
+}
+.search-bar:focus-within {
+  box-shadow: var(--shadow-3);
+}
+.search-bar .leading-icon {
+  font-size: 24px;
+  color: var(--md-on-surface-variant);
+  flex-shrink: 0;
+}
+.search-bar input[type="text"] {
+  flex: 1;
+  min-width: 0;
+  background: transparent;
+  border: none;
+  padding: 16px 0;
+  font: 400 16px/24px 'Roboto', sans-serif;
+  color: var(--md-on-surface);
+  outline: none;
+}
+.search-bar input::placeholder {
+  color: var(--md-on-surface-variant);
+}
+.search-bar input:-webkit-autofill,
+.search-bar input:-webkit-autofill:hover,
+.search-bar input:-webkit-autofill:focus {
+  -webkit-text-fill-color: var(--md-on-surface);
+  -webkit-box-shadow: 0 0 0px 1000px var(--md-elev-2) inset;
+  transition: background-color 5000s ease-in-out 0s;
+}
+
+/* ═══════════════════════════════════════════════════
+   Buttons
+   ═══════════════════════════════════════════════════ */
+
+/* ── Filled Button ── */
+.btn-filled {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 10px 24px;
+  border: none;
+  border-radius: var(--shape-full);
+  background: var(--md-primary);
+  color: var(--md-on-primary);
+  font: 500 14px/20px 'Roboto', sans-serif;
+  letter-spacing: .1px;
+  cursor: pointer;
+  transition: box-shadow var(--duration-short2) var(--motion-standard),
+              transform var(--duration-short2) var(--motion-standard);
+  position: relative;
+  overflow: hidden;
+}
+.btn-filled:hover {
+  box-shadow: var(--shadow-1);
+}
+.btn-filled:hover::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: rgba(56,30,114, var(--state-hover));
+  border-radius: inherit;
+}
+.btn-filled:active::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: rgba(56,30,114, var(--state-pressed));
+  border-radius: inherit;
+}
+.btn-filled .msi { font-size: 18px; }
+
+/* ── Filled Tonal Button ── */
+.btn-tonal {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 10px 24px;
+  border: none;
+  border-radius: var(--shape-full);
+  background: var(--md-secondary-container);
+  color: var(--md-on-secondary-container);
+  font: 500 14px/20px 'Roboto', sans-serif;
+  letter-spacing: .1px;
+  cursor: pointer;
+  transition: box-shadow var(--duration-short2) var(--motion-standard);
+  position: relative;
+  overflow: hidden;
+}
+.btn-tonal:hover {
+  box-shadow: var(--shadow-1);
+}
+.btn-tonal:hover::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: rgba(74,68,88, var(--state-hover));
+  border-radius: inherit;
+}
+.btn-tonal .msi { font-size: 18px; }
+
+/* ── Text Button ── */
+.btn-text {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 12px;
+  border: none;
+  border-radius: var(--shape-full);
+  background: transparent;
+  color: var(--md-primary);
+  font: 500 14px/20px 'Roboto', sans-serif;
+  letter-spacing: .1px;
+  cursor: pointer;
+  transition: background var(--duration-short2) var(--motion-standard);
+}
+.btn-text:hover {
+  background: rgba(208,188,255, var(--state-hover));
+}
+.btn-text .msi { font-size: 18px; }
+
+/* ── Icon Button (standard) ── */
+.btn-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px; height: 40px;
+  border: none;
+  border-radius: var(--shape-full);
+  background: transparent;
+  color: var(--md-on-surface-variant);
+  cursor: pointer;
+  transition: background var(--duration-short2) var(--motion-standard);
+  position: relative;
+  overflow: hidden;
+}
+.btn-icon:hover {
+  background: rgba(202,196,208, var(--state-hover));
+}
+.btn-icon:active {
+  background: rgba(202,196,208, var(--state-pressed));
+}
+
+/* ── Small Filled Tonal Icon Button ── */
+.btn-icon-sm {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px; height: 36px;
+  border: none;
+  border-radius: var(--shape-full);
+  background: var(--md-secondary-container);
+  color: var(--md-on-secondary-container);
+  cursor: pointer;
+  transition: box-shadow var(--duration-short2) var(--motion-standard);
+  position: relative;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+.btn-icon-sm:hover {
+  box-shadow: var(--shadow-1);
+}
+.btn-icon-sm .msi { font-size: 18px; }
+
+/* ── Filled Button (accent) ── */
+.btn-filled-accent {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px 16px;
+  border: none;
+  border-radius: var(--shape-full);
+  background: var(--md-tertiary-container);
+  color: var(--md-on-tertiary-container);
+  font: 500 12px/16px 'Roboto', sans-serif;
+  cursor: pointer;
+  transition: box-shadow var(--duration-short2) var(--motion-standard);
+  position: relative;
+  overflow: hidden;
+}
+.btn-filled-accent:hover {
+  box-shadow: var(--shadow-1);
+}
+.btn-filled-accent .msi { font-size: 16px; }
+
+/* ═══════════════════════════════════════════════════
+   Status Bar
+   ═══════════════════════════════════════════════════ */
+.status-bar {
+  text-align: center;
+  padding: 24px 0;
+  font: 400 14px/20px 'Roboto', sans-serif;
+  color: var(--md-on-surface-variant);
+}
+.status-bar .spin-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/* ═══════════════════════════════════════════════════
+   Animations
+   ═══════════════════════════════════════════════════ */
+@keyframes spin { to { transform: rotate(360deg); } }
+.spin { animation: spin 1s linear infinite; }
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.fade-in {
+  animation: fadeIn .4s var(--motion-emphasized-decel) forwards;
+  opacity: 0;
+}
+
+@keyframes shimmer {
+  0%   { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+/* ═══════════════════════════════════════════════════
+   Result Cards (MD3 Outlined Card)
+   ═══════════════════════════════════════════════════ */
+.results-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 20px;
+}
+.result-card {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 12px 16px;
+  border-radius: var(--shape-md);
+  border: 1px solid var(--md-outline-variant);
+  background: var(--md-surface);
+  transition: background var(--duration-short2) var(--motion-standard),
+              box-shadow var(--duration-short4) var(--motion-standard);
+}
+.result-card:hover {
+  background: var(--md-elev-1);
+  box-shadow: var(--shadow-1);
+}
+
+.result-thumb {
+  width: 56px; height: 56px;
+  border-radius: var(--shape-md);
+  overflow: hidden;
+  flex-shrink: 0;
+  background: var(--md-surface-variant);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.result-thumb img {
+  width: 100%; height: 100%;
+  object-fit: cover;
+}
+.result-thumb .msi {
+  font-size: 28px;
+  color: var(--md-on-surface-variant);
+}
+.placeholder-thumb {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%; height: 100%;
+  font-size: 20px;
+  font-weight: 500;
+  color: rgba(255,255,255,.9);
+  text-shadow: 0 1px 2px rgba(0,0,0,.3);
+}
+
+.result-info {
+  flex: 1;
+  min-width: 0;
+}
+.result-title {
+  font: 400 14px/20px 'Roboto', sans-serif;
+  color: var(--md-on-surface);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  margin-bottom: 2px;
+}
+.result-artist {
+  font: 400 12px/16px 'Roboto', sans-serif;
+  color: var(--md-on-surface-variant);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  margin-bottom: 4px;
+}
+.result-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.result-album {
+  font: 400 11px/16px 'Roboto', sans-serif;
+  color: var(--md-on-surface-variant);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  max-width: 180px;
+}
+
+/* ── Tag / Chip (MD3 Assist Chip) ── */
+.chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: var(--shape-sm);
+  border: 1px solid var(--md-outline-variant);
+  font: 500 10px/16px 'Roboto', sans-serif;
+  letter-spacing: .5px;
+  color: var(--md-on-surface-variant);
+}
+
+.result-actions {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+/* ═══════════════════════════════════════════════════
+   Load More
+   ═══════════════════════════════════════════════════ */
+.load-more-row {
+  text-align: center;
+  margin-bottom: 36px;
+}
+
+/* ═══════════════════════════════════════════════════
+   Downloads Section
+   ═══════════════════════════════════════════════════ */
+.downloads-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.downloads-header .icon-circle {
+  width: 40px; height: 40px;
+  border-radius: var(--shape-md);
+  background: var(--md-primary-container);
+  color: var(--md-on-primary-container);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.downloads-header .icon-circle .msi { font-size: 20px; }
+.downloads-header h2 {
+  font: 400 22px/28px 'Roboto', sans-serif;
+  color: var(--md-on-surface);
+  flex: 1;
+}
+
+.downloading-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+.downloaded-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* ── Download Progress Item (MD3 surface card) ── */
+.dl-progress-item {
+  padding: 12px 16px;
+  border-radius: var(--shape-md);
+  background: var(--md-elev-1);
+  transition: opacity .5s var(--motion-standard);
+}
+.dl-progress-item .dl-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+.dl-progress-item .dl-icon {
+  width: 36px; height: 36px;
+  border-radius: var(--shape-sm);
+  background: var(--md-primary-container);
+  color: var(--md-on-primary-container);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.dl-progress-item .dl-icon .msi { font-size: 18px; }
+.dl-progress-item .dl-info {
+  flex: 1;
+  min-width: 0;
+}
+.dl-progress-item .dl-title {
+  font: 400 14px/20px 'Roboto', sans-serif;
+  color: var(--md-on-surface);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.dl-progress-item .dl-artist {
+  font: 400 12px/16px 'Roboto', sans-serif;
+  color: var(--md-on-surface-variant);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.dl-progress-item .dl-pct {
+  font: 500 12px/16px 'Roboto', sans-serif;
+  letter-spacing: .5px;
+  color: var(--md-primary);
+  flex-shrink: 0;
+}
+
+/* ── Progress Bar (MD3 linear progress indicator) ── */
+.progress-track {
+  width: 100%;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--md-surface-variant);
+  overflow: hidden;
+}
+.progress-bar {
+  height: 100%;
+  border-radius: 2px;
+  background: var(--md-primary);
+  min-width: 3%;
+  transition: width .4s var(--motion-standard);
+}
+.progress-bar.indeterminate {
+  width: 100% !important;
+  background: linear-gradient(
+    90deg,
+    var(--md-primary) 0%,
+    var(--md-on-primary-container) 50%,
+    var(--md-primary) 100%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 2s linear infinite;
+}
+
+/* ── Downloaded File Item ── */
+.dl-file-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  border-radius: var(--shape-md);
+  background: var(--md-elev-1);
+  transition: background var(--duration-short2) var(--motion-standard);
+}
+.dl-file-item:hover {
+  background: var(--md-elev-2);
+}
+.dl-file-icon {
+  width: 36px; height: 36px;
+  border-radius: var(--shape-sm);
+  background: var(--md-surface-variant);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.dl-file-icon .msi { font-size: 18px; color: var(--md-on-surface-variant); }
+.dl-file-icon.music-icon .msi { color: var(--md-primary); }
+.dl-file-name {
+  flex: 1;
+  font: 400 14px/20px 'Roboto', sans-serif;
+  color: var(--md-on-surface);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.dl-file-size {
+  font: 400 12px/16px 'Roboto', sans-serif;
+  color: var(--md-on-surface-variant);
+  flex-shrink: 0;
+}
+.dl-file-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 12px;
+  border-radius: var(--shape-full);
+  font: 500 12px/16px 'Roboto', sans-serif;
+  letter-spacing: .5px;
+  color: var(--md-primary);
+  text-decoration: none;
+  transition: background var(--duration-short2) var(--motion-standard);
+  flex-shrink: 0;
+}
+.dl-file-link:hover {
+  background: rgba(208,188,255, var(--state-hover));
+}
+.dl-file-link .msi { font-size: 16px; }
+
+/* ═══════════════════════════════════════════════════
+   Modal / Dialog (MD3 Dialog)
+   ═══════════════════════════════════════════════════ */
+.modal-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgba(0,0,0,.4);
+  backdrop-filter: blur(2px);
+}
+.modal-scrim.hidden { display: none !important; }
+
+.modal-dialog {
+  background: var(--md-elev-3);
+  border-radius: var(--shape-xl);
+  padding: 24px;
+  max-width: 400px;
+  width: 100%;
+  box-shadow: var(--shadow-5);
+  max-height: 90vh;
+  overflow-y: auto;
+}
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+}
+.modal-header h3 {
+  font: 400 24px/32px 'Roboto', sans-serif;
+  color: var(--md-on-surface);
+}
+.modal-close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px; height: 32px;
+  border: none;
+  border-radius: var(--shape-full);
+  background: transparent;
+  color: var(--md-on-surface-variant);
+  cursor: pointer;
+  font-size: 20px;
+  transition: background var(--duration-short2) var(--motion-standard);
+}
+.modal-close:hover {
+  background: rgba(202,196,208, var(--state-hover));
+}
+
+/* ── Form Fields (MD3 Outlined Text Field) ── */
+.field-group {
+  margin-bottom: 20px;
+}
+.field-group label {
+  display: block;
+  font: 500 12px/16px 'Roboto', sans-serif;
+  letter-spacing: .5px;
+  color: var(--md-on-surface-variant);
+  margin-bottom: 8px;
+}
+.field-group select,
+.field-group input[type="text"] {
+  width: 100%;
+  padding: 12px 16px;
+  border: 1px solid var(--md-outline);
+  border-radius: var(--shape-xs);
+  background: transparent;
+  color: var(--md-on-surface);
+  font: 400 14px/20px 'Roboto', sans-serif;
+  outline: none;
+  transition: border-color var(--duration-short2) var(--motion-standard);
+}
+.field-group select {
+  appearance: none;
+  -webkit-appearance: none;
+  cursor: pointer;
+  padding-right: 40px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='18' height='18' viewBox='0 0 24 24' fill='none' stroke='%23CAC4D0' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+}
+.field-group select:focus,
+.field-group input[type="text"]:focus {
+  border-color: var(--md-primary);
+  border-width: 2px;
+  padding: 11px 15px;
+}
+.field-group input::placeholder {
+  color: var(--md-on-surface-variant);
+}
+.field-group input:-webkit-autofill,
+.field-group input:-webkit-autofill:hover,
+.field-group input:-webkit-autofill:focus {
+  -webkit-text-fill-color: var(--md-on-surface);
+  -webkit-box-shadow: 0 0 0px 1000px transparent inset;
+  transition: background-color 5000s ease-in-out 0s;
+}
+.field-group select option {
+  background: var(--md-elev-3);
+  color: var(--md-on-surface);
+}
+
+/* ── Input Group (text + button) ── */
+.input-group {
+  display: flex;
+  gap: 8px;
+}
+.input-group input {
+  flex: 1;
+  min-width: 0;
+}
+.input-group .btn-tonal {
+  padding: 10px 16px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+/* ── Modal Actions ── */
+.modal-actions {
+  display: flex;
+  gap: 12px;
+  margin-top: 24px;
+}
+.modal-actions .btn-filled,
+.modal-actions .btn-tonal {
+  flex: 1;
+  justify-content: center;
+}
+
+/* ═══════════════════════════════════════════════════
+   Directory Browser
+   ═══════════════════════════════════════════════════ */
+.dir-browser {
+  margin-top: 8px;
+  border: 1px solid var(--md-outline-variant);
+  border-radius: var(--shape-sm);
+  overflow: hidden;
+}
+.dir-browser.hidden { display: none !important; }
+
+.dir-breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 12px;
+  font: 400 12px/16px 'Roboto', sans-serif;
+  color: var(--md-on-surface-variant);
+  border-bottom: 1px solid var(--md-outline-variant);
+  overflow-x: auto;
+  white-space: nowrap;
+}
+.dir-breadcrumb button {
+  background: none;
+  border: none;
+  color: var(--md-on-surface-variant);
+  font: inherit;
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: var(--shape-xs);
+  transition: color var(--duration-short2) var(--motion-standard),
+              background var(--duration-short2) var(--motion-standard);
+}
+.dir-breadcrumb button:hover {
+  color: var(--md-primary);
+  background: rgba(208,188,255, var(--state-hover));
+}
+.dir-breadcrumb .sep {
+  color: var(--md-outline);
+}
+.dir-list {
+  max-height: 200px;
+  overflow-y: auto;
+  padding: 4px;
+}
+.dir-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 12px;
+  border: none;
+  border-radius: var(--shape-sm);
+  background: transparent;
+  color: var(--md-on-surface);
+  font: 400 13px/20px 'Roboto', sans-serif;
+  cursor: pointer;
+  text-align: left;
+  transition: background var(--duration-short2) var(--motion-standard);
+}
+.dir-item:hover {
+  background: rgba(202,196,208, var(--state-hover));
+}
+.dir-item .msi {
+  font-size: 18px;
+  color: var(--md-primary);
+  flex-shrink: 0;
+}
+.dir-item.nav-item {
+  color: var(--md-on-surface-variant);
+}
+.dir-item.nav-item .msi {
+  color: var(--md-on-surface-variant);
+}
+
+/* ═══════════════════════════════════════════════════
+   Toast (MD3 Snackbar)
+   ═══════════════════════════════════════════════════ */
+.toast {
+  position: fixed;
+  bottom: 88px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 70;
+  background: var(--md-inverse-surface);
+  color: var(--md-inverse-on-surface);
+  padding: 14px 20px;
+  border-radius: var(--shape-xs);
+  box-shadow: var(--shadow-3);
+  font: 400 14px/20px 'Roboto', sans-serif;
+  max-width: 480px;
+  min-width: 280px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.toast.hidden { display: none !important; }
+
+.toast-dot {
+  width: 8px; height: 8px;
+  border-radius: var(--shape-full);
+  flex-shrink: 0;
+  transition: background var(--duration-short2) var(--motion-standard);
+}
+.toast-dot.info    { background: var(--md-primary); }
+.toast-dot.success { background: #A5D6A7; }
+.toast-dot.error   { background: var(--md-error); }
+.toast-dot.warning { background: #FFE082; }
+
+/* ═══════════════════════════════════════════════════
+   Player Bar (MD3 bottom bar)
+   ═══════════════════════════════════════════════════ */
+.player-bar {
+  position: fixed;
+  bottom: 0; left: 0; right: 0;
+  z-index: 50;
+  background: var(--md-elev-3);
+  border-top: 1px solid var(--md-outline-variant);
+  padding: 10px 16px;
+  box-shadow: 0 -4px 16px rgba(0,0,0,.3);
+}
+.player-bar.hidden { display: none !important; }
+
+.player-inner {
+  max-width: 840px;
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+.player-thumb {
+  width: 48px; height: 48px;
+  border-radius: var(--shape-md);
+  overflow: hidden;
+  flex-shrink: 0;
+  background: var(--md-surface-variant);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: var(--shadow-1);
+}
+.player-thumb .msi {
+  font-size: 24px;
+  color: var(--md-on-surface-variant);
+}
+.player-thumb img {
+  width: 100%; height: 100%;
+  object-fit: cover;
+}
+.player-info {
+  flex: 1;
+  min-width: 0;
+}
+.player-title {
+  font: 500 14px/20px 'Roboto', sans-serif;
+  color: var(--md-on-surface);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.player-artist {
+  font: 400 12px/16px 'Roboto', sans-serif;
+  color: var(--md-on-surface-variant);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.player-bar audio {
+  height: 36px;
+  min-width: 240px;
+  max-width: 400px;
+  border-radius: var(--shape-xl);
+}
+.player-close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px; height: 40px;
+  border: none;
+  border-radius: var(--shape-full);
+  background: transparent;
+  color: var(--md-on-surface-variant);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background var(--duration-short2) var(--motion-standard);
+}
+.player-close:hover {
+  background: rgba(242,184,181, var(--state-hover));
+  color: var(--md-error);
+}
+.player-close .msi { font-size: 20px; }
+
+/* ═══════════════════════════════════════════════════
+   Audio element (dark theme invert)
+   ═══════════════════════════════════════════════════ */
+audio::-webkit-media-controls-panel {
+  background: var(--md-elev-2);
+}
+audio::-webkit-media-controls-play-button {
+  filter: invert(1);
+}
+audio::-webkit-media-controls-current-time-display,
+audio::-webkit-media-controls-time-remaining-display {
+  color: var(--md-on-surface);
+  text-shadow: none;
+}
+
+/* ═══════════════════════════════════════════════════
+   Empty State
+   ═══════════════════════════════════════════════════ */
+.empty-state {
+  text-align: center;
+  padding: 56px 16px;
+}
+.empty-state .icon-circle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 72px; height: 72px;
+  border-radius: var(--shape-full);
+  background: var(--md-surface-variant);
+  margin-bottom: 16px;
+}
+.empty-state .icon-circle .msi {
+  font-size: 32px;
+  color: var(--md-on-surface-variant);
+}
+.empty-state p {
+  font: 400 14px/20px 'Roboto', sans-serif;
+  color: var(--md-on-surface-variant);
+}
+
+/* ═══════════════════════════════════════════════════
+   Divider
+   ═══════════════════════════════════════════════════ */
+.divider {
+  height: 1px;
+  background: var(--md-outline-variant);
+  margin: 8px 0;
+}
+
+/* ═══════════════════════════════════════════════════
+   Responsive
+   ═══════════════════════════════════════════════════ */
+@media (max-width: 600px) {
+  .app-container {
+    padding: 24px 12px 120px;
+  }
+  .app-header h1 {
+    font-size: 24px; line-height: 32px;
+  }
+  .result-card {
+    flex-wrap: wrap;
+    gap: 12px;
+    padding: 12px;
+  }
+  .result-actions {
     width: 100%;
-    height: 100%;
-    font-size: 1.1rem;
-    font-weight: 700;
-    color: rgba(255,255,255,0.9);
-    text-shadow: 0 1px 2px rgba(0,0,0,0.3);
+    justify-content: flex-end;
   }
-
-  .bg-pattern {
-    background-image:
-      radial-gradient(circle at 20% 50%, rgba(79, 70, 229, 0.08) 0%, transparent 50%),
-      radial-gradient(circle at 80% 20%, rgba(124, 58, 237, 0.06) 0%, transparent 50%);
+  .player-inner {
+    flex-wrap: wrap;
+    gap: 8px;
   }
-
-  #bgLayer {
-    position: fixed;
-    top: -30px; left: -30px; right: -30px; bottom: -30px;
-    z-index: -1;
-    background-size: cover;
-    background-position: center;
-    background-repeat: no-repeat;
-    transition: background-image 0.8s ease-in-out;
-    filter: none;
+  .player-bar audio {
+    min-width: 160px;
+    max-width: 100%;
+    flex: 1;
   }
+  .result-album {
+    max-width: 120px;
+  }
+  .top-bar {
+    flex-wrap: wrap;
+  }
+  .segmented-btn {
+    padding: 8px 12px;
+    font-size: 13px;
+  }
+  .toast {
+    left: 16px;
+    right: 16px;
+    transform: none;
+    max-width: none;
+  }
+}
 </style>
 </head>
-<body class="text-gray-100 min-h-screen bg-pattern">
+<body>
   <div id="bgLayer"></div>
-  <div class="max-w-4xl mx-auto px-4 py-10">
+  <div class="app-container">
 
     <!-- Header -->
-    <div class="text-center mb-10">
-      <div class="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-br from-indigo-500 to-purple-600 mb-4 shadow-lg shadow-indigo-500/20">
-        <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-          <path stroke-linecap="round" stroke-linejoin="round" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
-        </svg>
+    <header class="app-header">
+      <div class="logo-icon">
+        <span class="msi" style="font-size:36px; font-variation-settings:'FILL' 0,'wght' 300,'GRAD' 0,'opsz' 36">library_music</span>
       </div>
-      <h1 class="text-4xl font-bold tracking-tight glow-text mb-2">Music Downloader</h1>
-      <p class="text-gray-400 text-sm">搜索、试听、下载高品质音乐</p>
-    </div>
+      <h1>Music Downloader</h1>
+      <p>搜索、试听、下载高品质音乐</p>
+    </header>
 
-    <div class="flex items-center justify-end mb-1">
-      <button onclick="toggleSettings()" class="text-gray-300 hover:text-white bg-gray-800/60 hover:bg-gray-700/80 border border-gray-700/50 rounded-lg px-3 py-2 transition-colors flex items-center gap-1.5 text-sm" title="设置">
-        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-          <path stroke-linecap="round" stroke-linejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-          <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-        </svg>
+    <!-- Settings Toggle -->
+    <div class="top-bar">
+      <div id="sourceGroup" class="segmented-buttons">
+        <button type="button" class="segmented-btn selected" data-value="netease" onclick="selectSource(this)">
+          <span class="msi check-icon">check</span>
+          网易云
+        </button>
+        <button type="button" class="segmented-btn" data-value="kuwo" onclick="selectSource(this)">
+          <span class="msi check-icon">check</span>
+          酷我
+        </button>
+        <button type="button" class="segmented-btn" data-value="joox" onclick="selectSource(this)">
+          <span class="msi check-icon">check</span>
+          JOOX
+        </button>
+      </div>
+      <button onclick="toggleSettings()" class="icon-btn-outlined" title="设置">
+        <span class="msi">settings</span>
         设置
       </button>
     </div>
 
-    <!-- Search Box -->
-    <div class="glass rounded-2xl p-2 mb-8 search-glow transition-shadow duration-300">
-      <div class="flex gap-2">
-        <div class="relative">
-          <select id="source" class="appearance-none bg-gray-800/80 border border-gray-700/50 rounded-xl pl-4 pr-9 py-3 text-sm focus:outline-none focus:border-indigo-500 cursor-pointer hover:bg-gray-800 transition-colors">
-            <option value="netease">网易云</option>
-            <option value="kuwo">酷我</option>
-            <option value="joox">JOOX</option>
-          </select>
-          <svg class="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
-        </div>
-        <input id="keyword" type="text" placeholder="输入歌名、歌手或专辑…" autofocus
-          class="flex-1 bg-transparent border-0 px-4 py-3 text-sm focus:outline-none placeholder-gray-500 text-gray-100">
-        <button onclick="doSearch()" id="searchBtn"
-          class="btn-primary px-6 py-3 rounded-xl text-sm font-semibold text-white flex items-center gap-2">
-          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-          </svg>
-          搜索
-        </button>
-      </div>
+    <!-- Search Bar -->
+    <div class="search-bar">
+      <span class="msi leading-icon">search</span>
+      <input id="keyword" type="text" placeholder="输入歌名、歌手或专辑…" autofocus autocomplete="off">
     </div>
 
+    <!-- Hidden source select for JS compat -->
+    <select id="source" class="hidden">
+      <option value="netease">网易云</option>
+      <option value="kuwo">酷我</option>
+      <option value="joox">JOOX</option>
+    </select>
+
     <!-- Status -->
-    <div id="status" class="hidden text-center text-sm text-gray-400 py-6">
-      <div class="inline-flex items-center gap-2">
-        <svg class="animate-spin h-4 w-4 text-indigo-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-        </svg>
+    <div id="status" class="hidden status-bar">
+      <div class="spin-wrap">
+        <span class="msi spin" style="font-size:20px; color:var(--md-primary)">progress_activity</span>
         <span>搜索中...</span>
       </div>
     </div>
 
     <!-- Results -->
-    <div id="results" class="space-y-3 mb-6"></div>
+    <div id="results" class="results-list"></div>
 
     <!-- Load More -->
-    <div id="loadMore" class="hidden text-center mb-10">
-      <button onclick="loadMore()" class="glass px-8 py-2.5 rounded-xl text-sm hover:bg-gray-800/80 transition-all hover:scale-105 active:scale-95">
+    <div id="loadMore" class="hidden load-more-row">
+      <button onclick="loadMore()" class="btn-tonal">
+        <span class="msi">expand_more</span>
         加载更多
       </button>
     </div>
 
     <!-- Downloads Section -->
     <div id="downloadsSection" class="hidden">
-      <div class="flex items-center gap-3 mb-5">
-        <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center">
-          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-          </svg>
+      <div class="downloads-header">
+        <div class="icon-circle">
+          <span class="msi">download</span>
         </div>
-        <h2 class="text-lg font-semibold">下载列表</h2>
-        <button onclick="loadDownloaded()" class="ml-auto text-xs text-indigo-400 hover:text-indigo-300 flex items-center gap-1 transition-colors">
-          <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-          </svg>
+        <h2>下载列表</h2>
+        <button onclick="loadDownloaded()" class="btn-text">
+          <span class="msi">refresh</span>
           刷新
         </button>
       </div>
-      <div id="downloadingList" class="space-y-2 mb-4"></div>
-      <div id="downloadsList" class="space-y-2"></div>
+      <div id="downloadingList" class="downloading-list"></div>
+      <div id="downloadsList" class="downloaded-list"></div>
     </div>
   </div>
 
   <!-- Settings Modal -->
-  <div id="settingsModal" class="hidden fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/60" onclick="closeSettings(event)">
-    <div class="glass-strong rounded-2xl p-6 max-w-sm w-full shadow-2xl" onclick="event.stopPropagation()">
-      <div class="flex justify-between items-center mb-6">
-        <h3 class="font-semibold text-lg">⚙️ 设置</h3>
-        <button onclick="closeSettings()" class="text-gray-500 hover:text-gray-300 text-xl leading-none">&times;</button>
+  <div id="settingsModal" class="hidden modal-scrim" onclick="closeSettings(event)">
+    <div class="modal-dialog" onclick="event.stopPropagation()">
+      <div class="modal-header">
+        <h3>设置</h3>
+        <button onclick="closeSettings()" class="modal-close">
+          <span class="msi">close</span>
+        </button>
       </div>
-      <div class="space-y-5">
-        <div>
-          <label class="block text-xs text-gray-400 mb-1.5">下载音质</label>
-          <select id="setQuality" class="w-full bg-gray-800/80 border border-gray-700/50 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500">
-            <option value="128">128 kbps</option>
-            <option value="192">192 kbps</option>
-            <option value="320" selected>320 kbps</option>
-            <option value="740">16bit 无损 (740)</option>
-            <option value="999">24bit 无损 (999)</option>
-          </select>
+      <div class="field-group">
+        <label>下载音质</label>
+        <select id="setQuality">
+          <option value="128">128 kbps</option>
+          <option value="192">192 kbps</option>
+          <option value="320" selected>320 kbps</option>
+          <option value="740">16bit 无损 (740)</option>
+          <option value="999">24bit 无损 (999)</option>
+        </select>
+      </div>
+      <div class="field-group">
+        <label>默认音源</label>
+        <select id="setSource">
+          <option value="netease">网易云</option>
+          <option value="kuwo">酷我</option>
+          <option value="joox">JOOX</option>
+        </select>
+      </div>
+      <div class="field-group">
+        <label>下载目录</label>
+        <div class="input-group">
+          <input id="setOutdir" type="text" placeholder="~/MusicDownloads">
+          <button onclick="browseOutdir()" class="btn-tonal">浏览</button>
         </div>
-        <div>
-          <label class="block text-xs text-gray-400 mb-1.5">默认音源</label>
-          <select id="setSource" class="w-full bg-gray-800/80 border border-gray-700/50 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500">
-            <option value="netease">网易云</option>
-            <option value="kuwo">酷我</option>
-            <option value="joox">JOOX</option>
-          </select>
-        </div>
-        <div>
-          <label class="block text-xs text-gray-400 mb-1.5">下载目录</label>
-          <div class="flex gap-2">
-            <input id="setOutdir" type="text" placeholder="~/MusicDownloads" class="flex-1 bg-gray-800/80 border border-gray-700/50 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500 font-mono">
-            <button onclick="browseOutdir()" class="bg-gray-800 hover:bg-gray-700 border border-gray-700/50 rounded-lg px-3 py-2 text-sm transition-colors whitespace-nowrap">浏览</button>
-          </div>
-          <div id="dirBrowser" class="hidden mt-2 bg-gray-900/80 rounded-lg border border-gray-700/50 overflow-hidden">
-            <div id="dirBreadcrumb" class="flex items-center gap-1 px-3 py-2 text-xs text-gray-400 border-b border-gray-700/50 overflow-x-auto"></div>
-            <div id="dirList" class="max-h-48 overflow-y-auto p-1"></div>
-          </div>
+        <div id="dirBrowser" class="hidden dir-browser">
+          <div id="dirBreadcrumb" class="dir-breadcrumb"></div>
+          <div id="dirList" class="dir-list"></div>
         </div>
       </div>
-      <div class="flex gap-3 mt-6">
-        <button onclick="saveSettings()" class="flex-1 btn-primary py-2.5 rounded-xl text-sm font-semibold text-white">保存</button>
-        <button onclick="closeSettings()" class="flex-1 bg-gray-800 hover:bg-gray-700 py-2.5 rounded-xl text-sm transition-colors">取消</button>
+      <div class="modal-actions">
+        <button onclick="saveSettings()" class="btn-filled">保存</button>
+        <button onclick="closeSettings()" class="btn-tonal">取消</button>
       </div>
     </div>
   </div>
 
   <!-- Toast -->
-  <div id="toast" class="hidden fixed bottom-24 right-6 glass-strong rounded-xl px-5 py-3.5 text-sm shadow-2xl z-40 max-w-sm">
-    <div class="flex items-center gap-3">
-      <div id="toastIcon" class="w-2 h-2 rounded-full bg-indigo-400 flex-shrink-0"></div>
-      <span id="toastText"></span>
-    </div>
+  <div id="toast" class="hidden toast">
+    <div id="toastIcon" class="toast-dot"></div>
+    <span id="toastText"></span>
   </div>
 
   <!-- Player Bar -->
-  <div id="playerBar" class="hidden fixed bottom-0 left-0 right-0 glass-strong border-t border-indigo-500/20 shadow-[0_-8px_32px_rgba(0,0,0,0.4)] px-4 py-3 z-50">
-    <div class="max-w-4xl mx-auto flex items-center gap-4">
-      <div id="playerThumb" class="w-12 h-12 rounded-xl bg-gradient-to-br from-gray-800 to-gray-900 flex-shrink-0 flex items-center justify-center text-lg overflow-hidden border border-gray-700/50 thumb-shadow">
-        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-          <path stroke-linecap="round" stroke-linejoin="round" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
-        </svg>
+  <div id="playerBar" class="hidden player-bar">
+    <div class="player-inner">
+      <div id="playerThumb" class="player-thumb">
+        <span class="msi">music_note</span>
       </div>
-      <div class="flex-1 min-w-0">
-        <div id="playerTitle" class="text-sm font-semibold truncate text-gray-100"></div>
-        <div id="playerArtist" class="text-xs text-indigo-300/70 truncate"></div>
+      <div class="player-info">
+        <div id="playerTitle" class="player-title truncate"></div>
+        <div id="playerArtist" class="player-artist truncate"></div>
       </div>
-      <audio id="playerAudio" controls class="h-9 min-w-[240px] max-w-[400px] rounded-lg" style="filter: invert(0.9) hue-rotate(180deg)"></audio>
-      <button id="playerClose" onclick="stopPlayer()" class="w-8 h-8 rounded-full flex items-center justify-center text-gray-400 hover:bg-red-500/20 hover:text-red-400 transition-colors flex-shrink-0">
-        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-          <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
-        </svg>
+      <audio id="playerAudio" controls></audio>
+      <button id="playerClose" onclick="stopPlayer()" class="player-close">
+        <span class="msi">close</span>
       </button>
     </div>
   </div>
@@ -321,12 +1380,18 @@ let currentPage = 1;
 let currentKeyword = '';
 let currentSource = '';
 
+function selectSource(btn) {
+  const group = document.getElementById('sourceGroup');
+  group.querySelectorAll('.segmented-btn').forEach(b => b.classList.remove('selected'));
+  btn.classList.add('selected');
+  document.getElementById('source').value = btn.dataset.value;
+}
+
 function doSearch(page = 1) {
   const keyword = document.getElementById('keyword').value.trim();
   if (!keyword) return;
 
   const source = document.getElementById('source').value;
-  const btn = document.getElementById('searchBtn');
   const statusEl = document.getElementById('status');
   const resultsEl = document.getElementById('results');
   const loadMoreEl = document.getElementById('loadMore');
@@ -335,8 +1400,6 @@ function doSearch(page = 1) {
   currentSource = source;
   currentPage = page;
 
-  btn.disabled = true;
-  btn.innerHTML = `<svg class="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>`;
   statusEl.classList.remove('hidden');
 
   if (page === 1) resultsEl.innerHTML = '';
@@ -351,13 +1414,11 @@ function doSearch(page = 1) {
       statusEl.classList.add('hidden');
       if (data.length === 0 && page === 1) {
         resultsEl.innerHTML = `
-          <div class="text-center py-16 fade-in">
-            <div class="inline-flex items-center justify-center w-16 h-16 rounded-full bg-gray-800/50 mb-4">
-              <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
+          <div class="empty-state fade-in">
+            <div class="icon-circle">
+              <span class="msi">sentiment_dissatisfied</span>
             </div>
-            <p class="text-gray-500">未找到结果</p>
+            <p>未找到结果</p>
           </div>`;
         return;
       }
@@ -371,11 +1432,7 @@ function doSearch(page = 1) {
       if (data.length >= 20) loadMoreEl.classList.remove('hidden');
     })
     .catch(err => {
-      statusEl.innerHTML = `<span class="text-red-400">${err.message}</span>`;
-    })
-    .finally(() => {
-      btn.disabled = false;
-      btn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg> 搜索`;
+      statusEl.innerHTML = '<span style="color:var(--md-error)">' + esc(err.message) + '</span>';
     });
 }
 
@@ -391,33 +1448,28 @@ function renderResults(data, append) {
     const idx = baseIndex + i;
     const artists = Array.isArray(item.artist) ? item.artist.join(' / ') : (item.artist || '未知');
     const card = document.createElement('div');
-    card.className = 'glass rounded-2xl p-4 flex items-center gap-4 card-hover fade-in';
+    card.className = 'result-card fade-in';
     card.style.animationDelay = `${i * 0.05}s`;
     card.innerHTML = `
-      <div class="w-14 h-14 rounded-xl bg-gradient-to-br from-gray-800 to-gray-900 flex-shrink-0 flex items-center justify-center text-lg overflow-hidden thumb-shadow" id="thumb-${idx}">
+      <div class="result-thumb" id="thumb-${idx}">
         <div class="placeholder-thumb" style="${generatePlaceholderStyle(item.name)}">${(item.name || '?')[0]}</div>
       </div>
-      <div class="flex-1 min-w-0">
-        <div class="font-medium text-sm truncate text-gray-100 mb-0.5">${esc(item.name || '?')}</div>
-        <div class="text-xs text-gray-400 truncate mb-0.5">${esc(artists)}</div>
-        <div class="flex items-center gap-2">
-          <span class="text-[10px] text-gray-500 truncate">${esc(item.album || '')}</span>
-          <span class="tag text-[10px] px-1.5 py-0.5 rounded text-indigo-300/80">${esc(item.source || '?')}</span>
+      <div class="result-info">
+        <div class="result-title">${esc(item.name || '?')}</div>
+        <div class="result-artist">${esc(artists)}</div>
+        <div class="result-meta">
+          <span class="result-album">${esc(item.album || '')}</span>
+          <span class="chip">${esc(item.source || '?')}</span>
         </div>
       </div>
-      <div class="flex gap-2 flex-shrink-0">
+      <div class="result-actions">
         <button onclick="playTrack('${esc(item.id)}','${esc(item.source || '')}','${esc(item.name)}','${esc(artists)}','${esc(item.pic_id || '')}',${idx})"
-          class="btn-play text-xs px-3 py-2 rounded-lg transition-colors text-white flex items-center gap-1">
-          <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
-            <path stroke-linecap="round" stroke-linejoin="round" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-          </svg>
+          class="btn-icon-sm" title="播放">
+          <span class="msi">play_arrow</span>
         </button>
         <button onclick="downloadTrack('${esc(item.id)}','${esc(item.source || '')}','${esc(item.name)}','${esc(artists)}','${esc(item.pic_id || '')}','${esc(item.album || '')}')"
-          class="btn-primary text-xs px-3 py-2 rounded-lg transition-colors text-white flex items-center gap-1">
-          <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-          </svg>
+          class="btn-filled-accent" title="下载">
+          <span class="msi">download</span>
           下载
         </button>
       </div>
@@ -430,7 +1482,7 @@ function renderResults(data, append) {
         .then(pic => {
           if (pic.url) {
             const thumb = document.getElementById(`thumb-${idx}`);
-            if (thumb) thumb.innerHTML = `<img src="${pic.url}" class="w-full h-full object-cover" onerror="this.parentElement.innerHTML='<svg class=\\'h-6 w-6 text-gray-600\\' fill=\\'none\\' viewBox=\\'0 0 24 24\\' stroke=\\'currentColor\\'><path stroke-linecap=\\'round\\' stroke-linejoin=\\'round\\' stroke-width=\\'2\\' d=\\'M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3\\'/></svg>'">`;
+            if (thumb) thumb.innerHTML = `<img src="${pic.url}" onerror="this.parentElement.innerHTML='<span class=\\'msi\\' style=\\'font-size:28px;color:var(--md-on-surface-variant)\\'>music_note</span>'">`;
           }
         }).catch(() => {});
     } else {
@@ -440,7 +1492,7 @@ function renderResults(data, append) {
         .then(pic => {
           if (pic.url) {
             const thumb = document.getElementById(`thumb-${idx}`);
-            if (thumb) thumb.innerHTML = `<img src="${pic.url}" class="w-full h-full object-cover" onerror="this.parentElement.innerHTML='<svg class=\\'h-6 w-6 text-gray-600\\' fill=\\'none\\' viewBox=\\'0 0 24 24\\' stroke=\\'currentColor\\'><path stroke-linecap=\\'round\\' stroke-linejoin=\\'round\\' stroke-width=\\'2\\' d=\\'M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3\\'/></svg>'">`;
+            if (thumb) thumb.innerHTML = `<img src="${pic.url}" onerror="this.parentElement.innerHTML='<span class=\\'msi\\' style=\\'font-size:28px;color:var(--md-on-surface-variant)\\'>music_note</span>'">`;
           }
         }).catch(() => {});
     }
@@ -460,7 +1512,7 @@ function playTrack(id, source, name, artist, picId, cardIdx) {
   audio.src = '';
 
   function setCover(url) {
-    const imgHtml = `<img src="${url}" class="w-full h-full object-cover">`;
+    const imgHtml = `<img src="${url}">`;
     thumb.innerHTML = imgHtml;
     const cardThumb = document.getElementById(`thumb-${cardIdx}`);
     if (cardThumb) cardThumb.innerHTML = imgHtml;
@@ -501,7 +1553,7 @@ function stopPlayer() {
 }
 
 function downloadTrack(id, source, name, artist, picId, album) {
-  showToast(`开始下载: ${name}`, 'info');
+  showToast('开始下载: ' + name, 'info');
 
   fetch('/api/download', {
     method: 'POST',
@@ -511,7 +1563,7 @@ function downloadTrack(id, source, name, artist, picId, album) {
     .then(r => r.json())
     .then(data => {
       if (data.status === 'exists') {
-        showToast(`已存在: ${data.filename}`, 'warning');
+        showToast('已存在: ' + data.filename, 'warning');
         return;
       }
       if (data.error) throw new Error(data.error);
@@ -530,23 +1582,20 @@ function addDownloadingItem(id, name, artist) {
 
   const item = document.createElement('div');
   item.id = `dl-${id}`;
-  item.className = 'glass rounded-xl px-4 py-3 text-sm fade-in';
+  item.className = 'dl-progress-item fade-in';
   item.innerHTML = `
-    <div class="flex items-center gap-3 mb-2">
-      <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center flex-shrink-0">
-        <svg class="animate-spin h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
-          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-        </svg>
+    <div class="dl-header">
+      <div class="dl-icon">
+        <span class="msi spin" style="font-size:18px">progress_activity</span>
       </div>
-      <div class="flex-1 min-w-0">
-        <div class="font-medium text-sm truncate text-gray-100">${esc(name)}</div>
-        <div class="text-xs text-gray-400 truncate">${esc(artist)}</div>
+      <div class="dl-info">
+        <div class="dl-title">${esc(name)}</div>
+        <div class="dl-artist">${esc(artist)}</div>
       </div>
-      <span id="dl-pct-${id}" class="text-xs text-indigo-400 flex-shrink-0">0%</span>
+      <span id="dl-pct-${id}" class="dl-pct">0%</span>
     </div>
-    <div class="w-full bg-gray-800 rounded-full h-1.5 overflow-hidden">
-      <div id="dl-bar-${id}" class="progress-bar indeterminate h-full rounded-full" style="width:0%"></div>
+    <div class="progress-track">
+      <div id="dl-bar-${id}" class="progress-bar indeterminate" style="width:0%"></div>
     </div>
   `;
   list.prepend(item);
@@ -580,23 +1629,21 @@ function pollDownload(id, name) {
           clearInterval(interval);
           if (pct) pct.textContent = '✅';
           if (bar) { bar.classList.remove('indeterminate'); bar.style.width = '100%'; }
-          showToast(`${name} 下载完成`, 'success');
+          showToast(name + ' 下载完成', 'success');
           loadDownloaded();
           setTimeout(() => {
             if (item) {
-              item.style.transition = 'opacity 0.5s ease';
               item.style.opacity = '0';
               setTimeout(() => item.remove(), 500);
             }
           }, 2000);
         } else if (s.status === 'error') {
           clearInterval(interval);
-          if (pct) { pct.textContent = '❌'; pct.className = 'text-xs text-red-400 flex-shrink-0'; }
+          if (pct) { pct.textContent = '❌'; pct.style.color = 'var(--md-error)'; }
           if (item) item.style.opacity = '0.5';
-          showToast(`${name}: ${s.error}`, 'error');
+          showToast(name + ': ' + s.error, 'error');
           setTimeout(() => {
             if (item) {
-              item.style.transition = 'opacity 0.5s ease';
               item.style.opacity = '0';
               setTimeout(() => item.remove(), 500);
             }
@@ -613,24 +1660,25 @@ function loadDownloaded() {
   fetch(`/api/downloaded?outdir=${encodeURIComponent(getOutdir())}`)
     .then(r => r.json())
     .then(files => {
-      if (files.length === 0) {
+      const downloading = document.getElementById('downloadingList').children.length;
+      if (files.length === 0 && downloading === 0) {
         section.classList.add('hidden');
         return;
       }
       section.classList.remove('hidden');
       list.innerHTML = files.map((f, i) => `
-        <div class="glass rounded-xl px-4 py-3 flex items-center gap-3 text-sm card-hover fade-in" style="animation-delay:${i*0.03}s">
-          <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-gray-800 to-gray-900 flex items-center justify-center flex-shrink-0">
-            ${f.ext === '.lrc' ? '<svg class="h-4 w-4 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>'
-              : f.ext === '.jpg' || f.ext === '.png' ? '<svg class="h-4 w-4 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>'
-              : '<svg class="h-4 w-4 text-indigo-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" /></svg>'}
+        <div class="dl-file-item fade-in" style="animation-delay:${i*0.03}s">
+          <div class="dl-file-icon ${f.ext !== '.lrc' && f.ext !== '.jpg' && f.ext !== '.png' ? 'music-icon' : ''}">
+            ${f.ext === '.lrc'
+              ? '<span class="msi">lyrics</span>'
+              : (f.ext === '.jpg' || f.ext === '.png')
+                ? '<span class="msi">image</span>'
+                : '<span class="msi">library_music</span>'}
           </div>
-          <span class="flex-1 truncate text-gray-200">${esc(f.name)}</span>
-          <span class="text-xs text-gray-500 flex-shrink-0">${fmtSize(f.size)}</span>
-          <a href="/api/file/${encodeURIComponent(f.name)}?outdir=${encodeURIComponent(getOutdir())}" class="text-indigo-400 hover:text-indigo-300 text-xs flex-shrink-0 flex items-center gap-1 transition-colors">
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-            </svg>
+          <span class="dl-file-name">${esc(f.name)}</span>
+          <span class="dl-file-size">${fmtSize(f.size)}</span>
+          <a href="/api/file/${encodeURIComponent(f.name)}?outdir=${encodeURIComponent(getOutdir())}" class="dl-file-link">
+            <span class="msi">download</span>
             下载
           </a>
         </div>
@@ -650,14 +1698,7 @@ function showToast(msg, type = 'info') {
   const text = document.getElementById('toastText');
 
   text.textContent = msg;
-
-  const colors = {
-    info: 'bg-indigo-400',
-    success: 'bg-green-400',
-    error: 'bg-red-400',
-    warning: 'bg-yellow-400'
-  };
-  icon.className = `w-2 h-2 rounded-full flex-shrink-0 ${colors[type] || colors.info}`;
+  icon.className = 'toast-dot ' + (type || 'info');
 
   el.classList.remove('hidden');
   clearTimeout(el._timeout);
@@ -721,23 +1762,18 @@ function renderDirBrowser(data) {
       cumPath += (i > 1 || !data.current.startsWith('/') ? '/' : '') + part;
     }
     if (!part && i === 0) part = '/';
-    html += `<button onclick="loadDir('${esc(cumPath || '/')}')" class="hover:text-indigo-400 transition-colors whitespace-nowrap">${esc(part || '/')}</button>`;
-    if (i < parts.length - 1) html += '<span class="text-gray-600">/</span>';
+    html += '<button onclick="loadDir(\'' + esc(cumPath || '/') + '\')">' + esc(part || '/') + '</button>';
+    if (i < parts.length - 1) html += '<span class="sep">/</span>';
   });
   breadcrumb.innerHTML = html;
 
   let items = '';
   if (data.parent != null) {
-    items += `<button onclick="loadDir('${esc(data.parent)}')" class="w-full text-left px-3 py-1.5 rounded hover:bg-gray-800/60 text-gray-400 text-sm flex items-center gap-2 transition-colors">
-      <svg class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/></svg> ..
-    </button>`;
+    items += '<button onclick="loadDir(\'' + esc(data.parent) + '\')" class="dir-item nav-item"><span class="msi">arrow_back</span> ..</button>';
   }
-  items += '<button onclick="loadDir(\'' + esc(data.home) + '\')" class="w-full text-left px-3 py-1.5 rounded hover:bg-gray-800/60 text-gray-400 text-sm flex items-center gap-2 transition-colors">🏠 ' + esc(data.home) + '</button>';
+  items += '<button onclick="loadDir(\'' + esc(data.home) + '\')" class="dir-item nav-item"><span class="msi">home</span> ' + esc(data.home) + '</button>';
   data.entries.forEach(d => {
-    items += `<button onclick="selectDir('${esc(d.path)}')" class="w-full text-left px-3 py-1.5 rounded hover:bg-gray-800/60 text-gray-300 text-sm flex items-center gap-2 transition-colors">
-      <svg class="h-3.5 w-3.5 text-indigo-400 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"/></svg>
-      ${esc(d.name)}
-    </button>`;
+    items += '<button onclick="selectDir(\'' + esc(d.path) + '\')" class="dir-item"><span class="msi">folder</span> ' + esc(d.name) + '</button>';
   });
   list.innerHTML = items;
 }
@@ -754,7 +1790,7 @@ function saveSettings() {
     outdir: document.getElementById('setOutdir').value,
   };
   localStorage.setItem('md_settings', JSON.stringify(s));
-  document.getElementById('source').value = s.source;
+  syncSourceGroup(s.source);
   closeSettings();
   showToast('设置已保存', 'success');
 }
@@ -763,13 +1799,21 @@ function getBr() { return getSettings().br || '320'; }
 function getSource() { return getSettings().source || 'netease'; }
 function getOutdir() { return getSettings().outdir || ''; }
 
+function syncSourceGroup(value) {
+  const group = document.getElementById('sourceGroup');
+  document.getElementById('source').value = value || 'netease';
+  group.querySelectorAll('.segmented-btn').forEach(b => {
+    b.classList.toggle('selected', b.dataset.value === (value || 'netease'));
+  });
+}
+
 function generatePlaceholderStyle(name) {
   const s = name || '?';
   let hash = 0;
   for (let i = 0; i < s.length; i++) hash = s.charCodeAt(i) + ((hash << 5) - hash);
   const h = Math.abs(hash) % 360;
   const h2 = (h + 40) % 360;
-  return `background: linear-gradient(135deg, hsl(${h}, 70%, 45%), hsl(${h2}, 65%, 35%));`;
+  return 'background:linear-gradient(135deg,hsl(' + h + ',70%,45%),hsl(' + h2 + ',65%,35%))';
 }
 
 function esc(s) {
@@ -782,7 +1826,7 @@ document.getElementById('keyword').addEventListener('keydown', e => {
 });
 
 loadDownloaded();
-document.getElementById('source').value = getSource();
+syncSourceGroup(getSource());
 
 (function initBg() {
   const bg = document.getElementById('bgLayer');

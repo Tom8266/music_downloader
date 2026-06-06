@@ -30,7 +30,7 @@ No test suite or linter is configured.
 - `webui.py` — Flask app that `from music_dl import ...` all the API client functions. Uses `waitress` in production, Flask's built-in server with `--debug`. Server-renders `templates/index.html` on `/`, everything else is JSON API routes under `/api/`.
 
 **Data flow (Web UI):**
-1. Single-page HTML (`templates/index.html`) with vanilla JS and Tailwind CSS (loaded from CDN).
+1. Single-page HTML (`templates/index.html`) with vanilla JS and Material Design 3 styling (Roboto + Material Symbols from Google Fonts CDN, CSS custom properties for design tokens).
 2. Search → `/api/search` → returns JSON from GD Studio API.
 3. Play → `/api/url` → returns a streaming URL the browser `<audio>` element plays directly.
 4. Download → `POST /api/download` → spawns a `threading.Thread` that downloads server-side, updates an in-memory `downloads_status` dict (no DB/persistence). Frontend polls `/api/download/<id>/status` every 800ms for progress.
