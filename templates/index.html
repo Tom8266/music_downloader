@@ -84,6 +84,12 @@
   .progress-bar {
     background: linear-gradient(90deg, #4f46e5, #7c3aed);
     background-size: 200% 100%;
+    min-width: 3%;
+    transition: width 0.4s ease;
+  }
+
+  .progress-bar.indeterminate {
+    width: 100% !important;
     animation: shimmer 2s linear infinite;
   }
 
@@ -264,13 +270,13 @@
         <div>
           <label class="block text-xs text-gray-400 mb-1.5">下载目录</label>
           <div class="flex gap-2">
-            <input id="setOutdir" type="text" value="downloads" readonly class="flex-1 bg-gray-800/80 border border-gray-700/50 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500 font-mono">
+            <input id="setOutdir" type="text" placeholder="~/MusicDownloads" class="flex-1 bg-gray-800/80 border border-gray-700/50 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500 font-mono">
             <button onclick="browseOutdir()" class="bg-gray-800 hover:bg-gray-700 border border-gray-700/50 rounded-lg px-3 py-2 text-sm transition-colors whitespace-nowrap">浏览</button>
           </div>
-        </div>
-        <div class="flex items-center justify-between">
-          <label class="text-xs text-gray-400">自动嵌入封面</label>
-          <button id="setPic" onclick="this.dataset.on = this.dataset.on === '1' ? '0' : '1'; this.textContent = this.dataset.on === '1' ? '✅' : '⬜'" class="text-lg" data-on="1">✅</button>
+          <div id="dirBrowser" class="hidden mt-2 bg-gray-900/80 rounded-lg border border-gray-700/50 overflow-hidden">
+            <div id="dirBreadcrumb" class="flex items-center gap-1 px-3 py-2 text-xs text-gray-400 border-b border-gray-700/50 overflow-x-auto"></div>
+            <div id="dirList" class="max-h-48 overflow-y-auto p-1"></div>
+          </div>
         </div>
       </div>
       <div class="flex gap-3 mt-6">
@@ -406,7 +412,7 @@ function renderResults(data, append) {
             <path stroke-linecap="round" stroke-linejoin="round" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
           </svg>
         </button>
-        <button onclick="downloadTrack('${esc(item.id)}','${esc(item.source || '')}','${esc(item.name)}','${esc(artists)}')"
+        <button onclick="downloadTrack('${esc(item.id)}','${esc(item.source || '')}','${esc(item.name)}','${esc(artists)}','${esc(item.pic_id || '')}','${esc(item.album || '')}')"
           class="btn-primary text-xs px-3 py-2 rounded-lg transition-colors text-white flex items-center gap-1">
           <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
             <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
@@ -493,13 +499,13 @@ function stopPlayer() {
   document.getElementById('playerBar').classList.add('hidden');
 }
 
-function downloadTrack(id, source, name, artist) {
+function downloadTrack(id, source, name, artist, picId, album) {
   showToast(`开始下载: ${name}`, 'info');
 
   fetch('/api/download', {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({id, source, br: getBr(), pic: getPic(), name, artist, outdir: getOutdir()})
+    body: JSON.stringify({id, source, br: getBr(), name, artist, pic_id: picId || '', album: album || '', outdir: getOutdir()})
   })
     .then(r => r.json())
     .then(data => {
@@ -508,27 +514,95 @@ function downloadTrack(id, source, name, artist) {
         return;
       }
       if (data.error) throw new Error(data.error);
-      showToast(`下载中: ${data.filename}`, 'info');
-      pollDownload(id, name);
+      addDownloadingItem(id, name, artist);
     })
     .catch(err => showToast(err.message, 'error'));
 }
 
+function addDownloadingItem(id, name, artist) {
+  const section = document.getElementById('downloadsSection');
+  const list = document.getElementById('downloadingList');
+  section.classList.remove('hidden');
+
+  const existing = document.getElementById(`dl-${id}`);
+  if (existing) return;
+
+  const item = document.createElement('div');
+  item.id = `dl-${id}`;
+  item.className = 'glass rounded-xl px-4 py-3 text-sm fade-in';
+  item.innerHTML = `
+    <div class="flex items-center gap-3 mb-2">
+      <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center flex-shrink-0">
+        <svg class="animate-spin h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
+          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+        </svg>
+      </div>
+      <div class="flex-1 min-w-0">
+        <div class="font-medium text-sm truncate text-gray-100">${esc(name)}</div>
+        <div class="text-xs text-gray-400 truncate">${esc(artist)}</div>
+      </div>
+      <span id="dl-pct-${id}" class="text-xs text-indigo-400 flex-shrink-0">0%</span>
+    </div>
+    <div class="w-full bg-gray-800 rounded-full h-1.5 overflow-hidden">
+      <div id="dl-bar-${id}" class="progress-bar indeterminate h-full rounded-full" style="width:0%"></div>
+    </div>
+  `;
+  list.prepend(item);
+  pollDownload(id, name);
+}
+
 function pollDownload(id, name) {
   const interval = setInterval(() => {
-    fetch(`/api/download/${id}/status`)
+    fetch(`/api/download/${encodeURIComponent(id)}/status`)
       .then(r => r.json())
       .then(s => {
+        const bar = document.getElementById(`dl-bar-${id}`);
+        const pct = document.getElementById(`dl-pct-${id}`);
+        const item = document.getElementById(`dl-${id}`);
+
+        if (bar && pct && s.progress !== undefined) {
+          if (s.total_bytes > 0) {
+            if (s.progress > 0) {
+              bar.classList.remove('indeterminate');
+              bar.style.width = s.progress + '%';
+            }
+            pct.textContent = s.progress + '%';
+          } else if (s.downloaded_bytes > 0) {
+            bar.classList.remove('indeterminate');
+            bar.style.width = '100%';
+            pct.textContent = fmtSize(s.downloaded_bytes);
+          }
+        }
+
         if (s.status === 'done') {
           clearInterval(interval);
+          if (pct) pct.textContent = '✅';
+          if (bar) { bar.classList.remove('indeterminate'); bar.style.width = '100%'; }
           showToast(`${name} 下载完成`, 'success');
           loadDownloaded();
+          setTimeout(() => {
+            if (item) {
+              item.style.transition = 'opacity 0.5s ease';
+              item.style.opacity = '0';
+              setTimeout(() => item.remove(), 500);
+            }
+          }, 2000);
         } else if (s.status === 'error') {
           clearInterval(interval);
+          if (pct) { pct.textContent = '❌'; pct.className = 'text-xs text-red-400 flex-shrink-0'; }
+          if (item) item.style.opacity = '0.5';
           showToast(`${name}: ${s.error}`, 'error');
+          setTimeout(() => {
+            if (item) {
+              item.style.transition = 'opacity 0.5s ease';
+              item.style.opacity = '0';
+              setTimeout(() => item.remove(), 500);
+            }
+          }, 3000);
         }
       });
-  }, 1000);
+  }, 800);
 }
 
 function loadDownloaded() {
@@ -598,6 +672,7 @@ function toggleSettings() {
 function closeSettings(e) {
   if (e && e.target.id !== 'settingsModal') return;
   document.getElementById('settingsModal').classList.add('hidden');
+  document.getElementById('dirBrowser').classList.add('hidden');
 }
 
 function getSettings() {
@@ -608,35 +683,67 @@ function loadSettings() {
   const s = getSettings();
   document.getElementById('setQuality').value = s.br || '320';
   document.getElementById('setSource').value = s.source || 'netease';
-  document.getElementById('setOutdir').value = s.outdir || 'downloads';
-  const picOn = s.pic !== false;
-  const btn = document.getElementById('setPic');
-  btn.dataset.on = picOn ? '1' : '0';
-  btn.textContent = picOn ? '✅' : '⬜';
+  document.getElementById('setOutdir').value = s.outdir || '';
 }
 
 function browseOutdir() {
-  if (typeof window !== 'undefined' && window.electron && window.electron.selectDirectory) {
-    window.electron.selectDirectory().then(result => {
-      if (!result.canceled && result.filePaths && result.filePaths.length > 0) {
-        document.getElementById('setOutdir').value = result.filePaths[0];
-      }
-    }).catch(() => {});
+  const browser = document.getElementById('dirBrowser');
+  if (browser.classList.contains('hidden')) {
+    browser.classList.remove('hidden');
+    loadDir(document.getElementById('setOutdir').value || '');
   } else {
-    const input = document.createElement('input');
-    input.type = 'file';
-    input.webkitdirectory = true;
-    input.style.display = 'none';
-    input.addEventListener('change', function() {
-      if (this.files && this.files.length > 0) {
-        const path = this.files[0].path || this.files[0].webkitRelativePath.split('/')[0] || '';
-        if (path) document.getElementById('setOutdir').value = path;
-      }
-      document.body.removeChild(input);
-    });
-    document.body.appendChild(input);
-    input.click();
+    browser.classList.add('hidden');
   }
+}
+
+function loadDir(path) {
+  fetch(`/api/dirs?path=${encodeURIComponent(path)}`)
+    .then(r => r.json())
+    .then(data => {
+      if (data.error) { showToast(data.error, 'error'); return; }
+      renderDirBrowser(data);
+    })
+    .catch(() => showToast('无法浏览目录', 'error'));
+}
+
+function renderDirBrowser(data) {
+  const breadcrumb = document.getElementById('dirBreadcrumb');
+  const list = document.getElementById('dirList');
+
+  const parts = data.current === '/' ? [''] : data.current.split('/');
+  let html = '';
+  let cumPath = '';
+  parts.forEach((part, i) => {
+    if (i === 0 && data.current.startsWith('/')) {
+      cumPath = '/';
+    } else if (i > 0) {
+      cumPath += (i > 1 || !data.current.startsWith('/') ? '/' : '') + part;
+    }
+    if (!part && i === 0) part = '/';
+    html += `<button onclick="loadDir('${esc(cumPath || '/')}')" class="hover:text-indigo-400 transition-colors whitespace-nowrap">${esc(part || '/')}</button>`;
+    if (i < parts.length - 1) html += '<span class="text-gray-600">/</span>';
+  });
+  breadcrumb.innerHTML = html;
+
+  let items = '';
+  if (data.parent != null) {
+    items += `<button onclick="loadDir('${esc(data.parent)}')" class="w-full text-left px-3 py-1.5 rounded hover:bg-gray-800/60 text-gray-400 text-sm flex items-center gap-2 transition-colors">
+      <svg class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/></svg> ..
+    </button>`;
+  }
+  items += '<button onclick="loadDir(\'' + esc(data.home) + '\')" class="w-full text-left px-3 py-1.5 rounded hover:bg-gray-800/60 text-gray-400 text-sm flex items-center gap-2 transition-colors">🏠 ' + esc(data.home) + '</button>';
+  data.entries.forEach(d => {
+    items += `<button onclick="selectDir('${esc(d.path)}')" class="w-full text-left px-3 py-1.5 rounded hover:bg-gray-800/60 text-gray-300 text-sm flex items-center gap-2 transition-colors">
+      <svg class="h-3.5 w-3.5 text-indigo-400 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"/></svg>
+      ${esc(d.name)}
+    </button>`;
+  });
+  list.innerHTML = items;
+}
+
+function selectDir(path) {
+  document.getElementById('setOutdir').value = path;
+  loadDir(path);
 }
 
 function saveSettings() {
@@ -644,7 +751,6 @@ function saveSettings() {
     br: document.getElementById('setQuality').value,
     source: document.getElementById('setSource').value,
     outdir: document.getElementById('setOutdir').value,
-    pic: document.getElementById('setPic').dataset.on === '1',
   };
   localStorage.setItem('md_settings', JSON.stringify(s));
   document.getElementById('source').value = s.source;
@@ -654,8 +760,7 @@ function saveSettings() {
 
 function getBr() { return getSettings().br || '320'; }
 function getSource() { return getSettings().source || 'netease'; }
-function getOutdir() { return getSettings().outdir || 'downloads'; }
-function getPic() { return getSettings().pic !== false; }
+function getOutdir() { return getSettings().outdir || ''; }
 
 function generatePlaceholderStyle(name) {
   const s = name || '?';

@@ -21,7 +21,6 @@
 - ⬇️ 在线下载（320kbps / 无损）
 - 🖼️ 封面自动嵌入 MP3 ID3 标签（多音源 fallback）
 - 🌐 Web UI — Flask + Tailwind CSS
-- 🖥️ Electron 桌面应用
 - 📄 CLI 命令行
 
 ## 安装
@@ -32,17 +31,9 @@ cd music_downloader
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
-npm install
 ```
 
 ## 使用
-
-### Electron
-
-```bash
-npm start          # 开发模式
-npm run dist       # 打包 AppImage / deb
-```
 
 ### Web UI
 

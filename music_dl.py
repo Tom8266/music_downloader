@@ -2,13 +2,19 @@
 """GD Studio Music API CLI — 搜索、下载、歌词、专辑图"""
 
 import argparse
+import logging
 import os
 import sys
+import time
 import urllib.parse
 import requests
 from mutagen.mp3 import MP3
 from mutagen.id3 import ID3, APIC, USLT, TIT2, TPE1, TALB, TCON, TYER, error as ID3Error
+from mutagen.flac import FLAC, Picture
+from mutagen.mp4 import MP4, MP4Cover
 from rich.progress import Progress, BarColumn, TextColumn, TimeRemainingColumn, TransferSpeedColumn, DownloadColumn
+
+logger = logging.getLogger("music_dl")
 
 API_BASE = "https://music-api.gdstudio.xyz/api.php"
 DEFAULT_SOURCE = "netease"
@@ -16,22 +22,52 @@ DEFAULT_BR = "320"
 TIMEOUT = 30
 
 SOURCES = ["netease", "kuwo", "joox"]
-STABLE_SOURCES = ["netease", "kuwo", "joox"]
+
+
+def setup_logging(level=logging.INFO, log_file=None):
+    fmt = logging.Formatter(
+        "%(asctime)s [%(levelname)-5s] %(name)s | %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+    )
+    root = logging.getLogger()
+    root.setLevel(level)
+    root.handlers.clear()
+    handler = logging.StreamHandler(sys.stderr)
+    handler.setFormatter(fmt)
+    root.addHandler(handler)
+    if log_file:
+        try:
+            os.makedirs(os.path.dirname(log_file) or ".", exist_ok=True)
+            fh = logging.FileHandler(log_file, encoding="utf-8")
+            fh.setFormatter(fmt)
+            root.addHandler(fh)
+        except OSError as e:
+            logger.warning("无法创建日志文件 %s: %s", log_file, e)
 
 
 def search(name, source=DEFAULT_SOURCE, count=20, pages=1, album=False):
     s = source + "_album" if album else source
     params = {"types": "search", "source": s, "name": name, "count": count, "pages": pages}
+    logger.debug("搜索: source=%s query=%r count=%d page=%d album=%s", s, name, count, pages, album)
     resp = requests.get(API_BASE, params=params, timeout=TIMEOUT)
     resp.raise_for_status()
-    return resp.json()
+    data = resp.json()
+    n = len(data) if isinstance(data, list) else 0
+    logger.debug("搜索完成: %d 条结果", n)
+    return data
 
 
 def get_song_url(track_id, source=DEFAULT_SOURCE, br=DEFAULT_BR):
     params = {"types": "url", "source": source, "id": track_id, "br": br}
+    logger.debug("获取下载链接: id=%s source=%s br=%s", track_id, source, br)
     resp = requests.get(API_BASE, params=params, timeout=TIMEOUT)
     resp.raise_for_status()
-    return resp.json()
+    data = resp.json()
+    if data.get("url"):
+        logger.info("获取下载链接成功: %s KB, %s", data.get("size", "?"), data.get("br", "?"))
+    else:
+        logger.warning("获取下载链接失败: %s", data)
+    return data
 
 
 def get_lyric(lyric_id, source=DEFAULT_SOURCE):
@@ -52,60 +88,143 @@ def sanitize_filename(name):
     return "".join(c for c in name if c not in r'\/:*?"<>|').strip()
 
 
-def download_file(url, filepath):
+def download_file(url, filepath, progress_callback=None):
+    t0 = time.time()
+    logger.info("开始下载: %s", os.path.basename(filepath))
+    logger.debug("下载 URL: %s", url[:120])
     resp = requests.get(url, stream=True, timeout=120)
     resp.raise_for_status()
     total = int(resp.headers.get("content-length", 0))
+    logger.debug("文件大小: %.1f MB", total / 1048576 if total else 0)
 
-    with Progress(
-        TextColumn("  [bold green]⬇[/bold green]"),
-        BarColumn(),
-        "[progress.percentage]{task.percentage:>3.0f}%",
-        DownloadColumn(),
-        TransferSpeedColumn(),
-        TimeRemainingColumn(),
-    ) as progress:
-        task = progress.add_task("", total=total or None)
+    downloaded = 0
+
+    def download_chunks():
+        nonlocal downloaded
         with open(filepath, "wb") as f:
             for chunk in resp.iter_content(chunk_size=8192):
                 f.write(chunk)
-                progress.update(task, advance=len(chunk))
+                downloaded += len(chunk)
+                if progress_callback:
+                    progress_callback(downloaded, total)
+
+    if progress_callback:
+        download_chunks()
+    else:
+        with Progress(
+            TextColumn("  [bold green]⬇[/bold green]"),
+            BarColumn(),
+            "[progress.percentage]{task.percentage:>3.0f}%",
+            DownloadColumn(),
+            TransferSpeedColumn(),
+            TimeRemainingColumn(),
+        ) as progress:
+            task = progress.add_task("", total=total or None)
+            with open(filepath, "wb") as f:
+                for chunk in resp.iter_content(chunk_size=8192):
+                    f.write(chunk)
+                    progress.update(task, advance=len(chunk))
+
+    elapsed = time.time() - t0
+    size_mb = os.path.getsize(filepath) / 1048576
+    logger.info("下载完成: %s (%.1f MB, %.1fs)", os.path.basename(filepath), size_mb, elapsed)
 
 
 def embed_metadata(filepath, title="", artist="", album="", lyric_text="", pic_data=None):
-    try:
-        audio = MP3(filepath, ID3=ID3)
-    except Exception:
+    ext = os.path.splitext(filepath)[1].lower()
+    logger.debug("嵌入元数据: %s (fmt=%s)", os.path.basename(filepath), ext)
+
+    if ext == ".mp3":
+        return _embed_mp3(filepath, title, artist, album, lyric_text, pic_data)
+    elif ext == ".flac":
+        return _embed_flac(filepath, title, artist, album, pic_data)
+    elif ext in (".m4a", ".mp4"):
+        return _embed_mp4(filepath, title, artist, album, pic_data)
+    else:
+        logger.debug("不支持的文件格式: %s", ext)
         return None
 
+
+def _embed_mp3(filepath, title, artist, album, lyric_text, pic_data):
+    try:
+        audio = MP3(filepath, ID3=ID3)
+    except Exception as e:
+        logger.warning("无法打开 MP3: %s — %s", filepath, e)
+        return None
     if audio.tags is None:
         audio.add_tags()
-
     tags = audio.tags
-
     if title:
         tags.add(TIT2(encoding=3, text=title))
     if artist:
         tags.add(TPE1(encoding=3, text=artist))
     if album:
         tags.add(TALB(encoding=3, text=album))
-
     if lyric_text:
         tags.delall("USLT")
         tags.add(USLT(encoding=3, lang="zho", desc="", text=lyric_text))
-
     if pic_data:
         tags.delall("APIC")
         tags.add(APIC(encoding=3, mime="image/jpeg", type=3, desc="Cover", data=pic_data))
-
     tags.save(filepath, v2_version=3)
+    logger.info("MP3 元数据嵌入成功: title=%s artist=%s pic=%s",
+                title or "-", artist or "-", "yes" if pic_data else "no")
+    return filepath
+
+
+def _embed_flac(filepath, title, artist, album, pic_data):
+    try:
+        audio = FLAC(filepath)
+    except Exception as e:
+        logger.warning("无法打开 FLAC: %s — %s", filepath, e)
+        return None
+    if title:
+        audio["TITLE"] = title
+    if artist:
+        audio["ARTIST"] = artist
+    if album:
+        audio["ALBUM"] = album
+    if pic_data:
+        audio.clear_pictures()
+        pic = Picture()
+        pic.type = 3
+        pic.mime = "image/jpeg"
+        pic.desc = "Cover"
+        pic.data = pic_data
+        audio.add_picture(pic)
+    audio.save()
+    logger.info("FLAC 元数据嵌入成功: title=%s artist=%s pic=%s",
+                title or "-", artist or "-", "yes" if pic_data else "no")
+    return filepath
+
+
+def _embed_mp4(filepath, title, artist, album, pic_data):
+    try:
+        audio = MP4(filepath)
+    except Exception as e:
+        logger.warning("无法打开 M4A: %s — %s", filepath, e)
+        return None
+    if title:
+        audio["\xa9nam"] = title
+    if artist:
+        audio["\xa9ART"] = artist
+    if album:
+        audio["\xa9alb"] = album
+    if pic_data:
+        cover = MP4Cover(pic_data, imageformat=MP4Cover.FORMAT_JPEG)
+        audio["covr"] = [cover]
+    audio.save()
+    logger.info("M4A 元数据嵌入成功: title=%s artist=%s pic=%s",
+                title or "-", artist or "-", "yes" if pic_data else "no")
     return filepath
 
 
 def fetch_cover(name, artist="", preferred_source=DEFAULT_SOURCE):
+    logger.debug("获取封面: name=%s artist=%s preferred=%s", name, artist, preferred_source)
     for src in [preferred_source] + [s for s in SOURCES if s != preferred_source]:
         try:
             query = f"{name} {artist}".strip()
+            logger.debug("封面尝试: source=%s query=%r", src, query)
             r = search(query, src, count=5)
             if not isinstance(r, list) or not r:
                 continue
@@ -123,13 +242,16 @@ def fetch_cover(name, artist="", preferred_source=DEFAULT_SOURCE):
                 if pic_url:
                     pic_resp = requests.get(pic_url, timeout=TIMEOUT)
                     pic_resp.raise_for_status()
+                    logger.info("封面获取成功: source=%s size=%d", src, len(pic_resp.content))
                     return pic_resp.content, src
         except Exception:
             continue
+    logger.warning("封面获取失败: 所有音源均未找到封面")
     return None, None
 
 
 def cmd_search(args):
+    logger.info("CLI 搜索: %s", args.name)
     result = search(args.name, args.source, args.count, args.pages, args.album)
     if isinstance(result, list):
         print(f"\n找到 {len(result)} 首歌曲 ({args.source}, 第{args.pages}页):\n")
@@ -142,6 +264,7 @@ def cmd_search(args):
             print(f"       ID: {item.get('id', '?')}  源: {item.get('source', '?')}")
             print()
     else:
+        logger.error("搜索结果异常: %s", result)
         print(f"搜索结果异常: {result}")
 
 
@@ -157,6 +280,7 @@ def cmd_download(args):
     result = get_song_url(args.id, args.source, args.br)
     url = result.get("url")
     if not url:
+        logger.error("未获取到下载链接: id=%s result=%s", args.id, result)
         print(f"未获取到下载链接: {result}")
         return
 
@@ -170,6 +294,7 @@ def cmd_download(args):
     filepath = os.path.join(args.outdir, filename)
 
     if os.path.exists(filepath):
+        logger.info("文件已存在，跳过: %s", filepath)
         print(f"已存在，跳过: {filepath}")
         return
 
@@ -183,22 +308,26 @@ def cmd_download(args):
     download_file(url, filepath)
 
     pic_data = None
-    if args.pic:
+    pic_src = None
+    if not args.no_pic:
         pic_data, pic_src = fetch_cover(name, args.artist or "", args.source)
 
-    if ext == ".mp3" and pic_data:
-        try:
-            embed_metadata(
-                filepath,
-                title=name,
-                artist=args.artist or "",
-                pic_data=pic_data,
-            )
+    try:
+        embed_metadata(
+            filepath,
+            title=name,
+            artist=args.artist or "",
+            album=args.album or "",
+            pic_data=pic_data,
+        )
+        if pic_data:
             print(f"  封面已嵌入{f' ({pic_src})' if pic_src else ''}")
-        except Exception as e:
-            print(f"  嵌入元数据失败: {e}")
+    except Exception as e:
+        logger.exception("嵌入元数据失败: %s", filepath)
+        print(f"  嵌入元数据失败: {e}")
 
     print(f"\n✅ 下载完成: {filepath}")
+    logger.info("CLI 下载完成: %s", filepath)
 
 
 def cmd_lyric(args):
@@ -245,11 +374,14 @@ def main():
   %(prog)s search 周杰伦 --album                   # 搜索专辑
   %(prog)s download abc123                         # 下载歌曲
   %(prog)s download abc123 --name 大鱼 --artist 周深 # 指定歌名艺术家
-  %(prog)s download abc123 --pic -b 999            # 无损+封面嵌入
+  %(prog)s download abc123 -b 999                  # 无损下载（自动嵌入封面）
+  %(prog)s download abc123 --no-pic                # 不嵌入封面
   %(prog)s lyric abc123                            # 获取歌词
   %(prog)s pic abc123                              # 获取专辑图
         """,
     )
+    parser.add_argument("-v", "--verbose", action="store_true", help="详细日志输出 (DEBUG 级别)")
+    parser.add_argument("--log-file", default=None, help="日志输出到文件")
     sub = parser.add_subparsers(dest="cmd", help="可用命令")
 
     p_search = sub.add_parser("search", help="搜索歌曲/专辑")
@@ -263,9 +395,10 @@ def main():
     p_dl.add_argument("id", help="曲目 ID")
     p_dl.add_argument("-s", "--source", default=DEFAULT_SOURCE, choices=SOURCES, help="音乐源 (默认: netease)")
     p_dl.add_argument("-b", "--br", default=DEFAULT_BR, choices=["128", "192", "320", "740", "999"], help="音质 (默认: 320)")
-    p_dl.add_argument("--pic", action="store_true", help="嵌入专辑封面到 MP3（自动 fallback 音源）")
+    p_dl.add_argument("--no-pic", action="store_true", help="不嵌入封面")
     p_dl.add_argument("--name", default="", help="自定义文件名（省略时自动搜索）")
     p_dl.add_argument("--artist", default="", help="自定义艺术家名")
+    p_dl.add_argument("--album", default="", help="自定义专辑名")
     p_dl.add_argument("-o", "--outdir", default="downloads", help="输出目录 (默认: downloads)")
 
     p_lyric = sub.add_parser("lyric", help="获取歌词")
@@ -281,6 +414,9 @@ def main():
     p_pic.add_argument("--save", action="store_true", help="保存图片")
 
     args = parser.parse_args()
+
+    level = logging.DEBUG if args.verbose else logging.INFO
+    setup_logging(level=level, log_file=args.log_file)
 
     if not args.cmd:
         parser.print_help()
