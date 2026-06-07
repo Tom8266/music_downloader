@@ -1968,8 +1968,9 @@ function _browseDir(setInputId, browserDivId, prefix) {
 }
 
 function _loadDir(path, prefix) {
-  const fn = prefix ? `load${prefix}Dir` : 'loadDir';
-  const selFn = prefix ? `select${prefix}Dir` : 'selectDir';
+  const cap = prefix ? prefix.charAt(0).toUpperCase() + prefix.slice(1) : '';
+  const fn = prefix ? `load${cap}Dir` : 'loadDir';
+  const selFn = prefix ? `select${cap}Dir` : 'selectDir';
   fetch(`/api/dirs?path=${encodeURIComponent(path)}`)
     .then(r => r.json())
     .then(data => {
@@ -2012,9 +2013,9 @@ function _selectDir(path, setInputId, prefix) {
 function browseOutdir() { _browseDir('setOutdir', 'dirBrowser', ''); }
 function loadDir(path) { _loadDir(path, ''); }
 function selectDir(path) { _selectDir(path, 'setOutdir', ''); }
-function browseVideoOutdir() { _browseDir('setVideoOutdir', 'videoDirBrowser', 'Video'); }
-function loadVideoDir(path) { _loadDir(path, 'Video'); }
-function selectVideoDir(path) { _selectDir(path, 'setVideoOutdir', 'Video'); }
+function browseVideoOutdir() { _browseDir('setVideoOutdir', 'videoDirBrowser', 'video'); }
+function loadVideoDir(path) { _loadDir(path, 'video'); }
+function selectVideoDir(path) { _selectDir(path, 'setVideoOutdir', 'video'); }
 
 function saveSettings() {
   const s = {
@@ -2048,16 +2049,6 @@ function loadVideoSettings() {
   const s = getVideoSettings();
   document.getElementById('setVideoOutdir').value = s.outdir || '';
   document.getElementById('setCookie').value = s.cookie || '';
-}
-
-function browseVideoOutdir() {
-  const browser = document.getElementById('videoDirBrowser');
-  if (browser.classList.contains('hidden')) {
-    browser.classList.remove('hidden');
-    loadVideoDir(document.getElementById('setVideoOutdir').value || '');
-  } else {
-    browser.classList.add('hidden');
-  }
 }
 
 function syncSourceGroup(value) {
