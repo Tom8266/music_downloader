@@ -33,7 +33,18 @@ def _clean_url(url):
     """Strip tracking parameters that can confuse yt-dlp."""
     import re
     # Remove common tracking params from B站 URLs
-    return re.sub(r'[?&](spm_id_from|vd_source|share_source|share_medium|share_plat|share_session_id|share_tag|timestamp|unique_k|up_id|from_source|from_spmid|plat_id|session_id)=[^&]*', '', url).rstrip('?')
+    TRACK_PARAMS = (
+        "spm_id_from|vd_source|share_source|share_medium|share_plat|"
+        "share_session_id|share_tag|timestamp|unique_k|up_id|from_source|"
+        "from_spmid|plat_id|session_id|trackid"
+    )
+    url = re.sub(rf'[?&]({TRACK_PARAMS})=[^&]*', '', url)
+    # Fix edge case: if the first tracked param after ? was removed but
+    # untracked ones remain, the URL may have & as the first separator.
+    # e.g. /video/BV123/&legit_param=1 → /video/BV123/?legit_param=1
+    if '&' in url and '?' not in url:
+        url = url.replace('&', '?', 1)
+    return url.rstrip('?')
 
 
 def _build_opts(extra=None, cookies=None):
