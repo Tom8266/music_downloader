@@ -2492,6 +2492,10 @@ function pollVideoProgress(vid) {
             meta.textContent = fmtSize(s.speed) + '/s';
             if (s.eta > 0) meta.textContent += '  剩余 ' + Math.round(s.eta) + 's';
           }
+        } else if (s.status === 'processing') {
+          if (pct) pct.textContent = 'OK';
+          if (bar) { bar.classList.remove('indeterminate'); bar.style.width = '100%'; }
+          if (meta) meta.textContent = '处理中… (合并音视频)';
         } else if (s.status === 'done') {
           clearInterval(interval);
           if (pct) pct.textContent = 'OK';

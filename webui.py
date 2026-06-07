@@ -545,6 +545,13 @@ def api_video_download():
 
             def on_progress(downloaded, total, speed, eta):
                 now = time.time()
+                # Post-processing signal from yt-dlp (download done, merging now)
+                if downloaded < 0:
+                    with video_downloads_lock:
+                        if vid in video_downloads_status:
+                            video_downloads_status[vid]["status"] = "processing"
+                            video_downloads_status[vid]["progress"] = 100
+                    return
                 if now - last_update[0] < 0.5 and total and downloaded < total:
                     return
                 last_update[0] = now

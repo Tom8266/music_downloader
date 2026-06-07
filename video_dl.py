@@ -361,6 +361,10 @@ def download_video(url, format_id="best", output_dir=None, progress_callback=Non
             eta = d.get("eta") or 0
             if progress_callback:
                 progress_callback(downloaded, total, speed, eta)
+        elif d["status"] == "finished":
+            # Download complete; post-processing (merge) begins — signal to stop spinner
+            if progress_callback:
+                progress_callback(-1, -1, 0, 0)
 
     extra = {
         "format": format_str,
