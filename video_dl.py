@@ -395,6 +395,9 @@ def download_video(url, format_id="best", output_dir=None, progress_callback=Non
         if cookie_file:
             os.unlink(cookie_file)
 
+    # Clean up yt-dlp intermediate files left behind after merging
+    _cleanup_intermediate_files(output_dir, filepath)
+
     elapsed = time.time() - t0
     if filepath and os.path.isfile(filepath):
         size_mb = os.path.getsize(filepath) / 1048576
@@ -402,3 +405,33 @@ def download_video(url, format_id="best", output_dir=None, progress_callback=Non
     else:
         logger.warning("视频下载可能失败: 未找到输出文件 (filepath=%s)", filepath)
     return filepath
+
+
+def _cleanup_intermediate_files(output_dir, final_filepath):
+    """Remove yt-dlp orphaned intermediate files after merging.
+
+    When yt-dlp downloads bestvideo+bestaudio separately and merges via
+    ffmpeg, it sometimes leaves behind .f{id}.mp4 / .f{id}.m4a fragments
+    and stuck .temp.mp4 files.  Clean them up so only the final file remains.
+    """
+    import glob, re
+    if not output_dir or not os.path.isdir(output_dir):
+        return
+    # Recover .temp.mp4 → .mp4 (yt-dlp sometimes gets stuck with temp name)
+    for f in glob.glob(os.path.join(output_dir, "*.temp.mp4")):
+        final = f.replace(".temp.mp4", ".mp4")
+        if not os.path.exists(final):
+            try:
+                os.rename(f, final)
+                if final_filepath and f.endswith(os.path.basename(final_filepath or "") + ".temp.mp4"):
+                    pass  # actual filepath was the temp; it's now renamed
+            except OSError:
+                pass
+    # Delete orphaned intermediate stream fragments
+    for pattern in ("*.f[0-9]*.mp4", "*.f[0-9]*.m4a", "*.f[0-9]*.webm", "*.f[0-9]*.m4s"):
+        for f in glob.glob(os.path.join(output_dir, pattern)):
+            try:
+                os.remove(f)
+                logger.debug("已清理中间文件: %s", os.path.basename(f))
+            except OSError:
+                pass
