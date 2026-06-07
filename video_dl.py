@@ -119,6 +119,56 @@ def _get_bilibili_collection(bvid):
     }
 
 
+def _get_bilibili_bangumi_season(season_id):
+    """Query Bilibili PGC API for full season episode list.
+
+    Handles bangumi/episode URLs (e.g. /bangumi/play/ep779777).
+    Returns collection-format dict or None.
+    """
+    import requests
+    api_url = f"https://api.bilibili.com/pgc/view/web/season?season_id={season_id}"
+    try:
+        resp = requests.get(api_url, headers={
+            "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+            "Referer": "https://www.bilibili.com/",
+        }, timeout=10)
+        data = resp.json()
+    except Exception:
+        return None
+
+    result = data.get("result") or {}
+    episodes = result.get("episodes", [])
+    if not episodes:
+        return None
+
+    items = []
+    for ep in episodes:
+        link = ep.get("link") or ep.get("share_url") or ""
+        title = ep.get("title") or ep.get("long_title") or "?"
+        # Prepend episode number for clarity
+        ep_num = ep.get("title") or ""
+        if ep_num:
+            label = f"{ep_num} {ep.get('long_title', '')}"
+        else:
+            label = title
+        items.append({
+            "id": str(ep.get("id") or ep.get("aid", "")),
+            "url": link,
+            "title": label.strip(),
+        })
+
+    if not items:
+        return None
+
+    return {
+        "title": result.get("title") or result.get("season_title", ""),
+        "thumbnail": result.get("cover", ""),
+        "is_playlist": True,
+        "playlist_count": len(items),
+        "playlist_items": items,
+    }
+
+
 def get_video_info(url, cookies=None):
     """Extract video metadata using yt-dlp.
 
@@ -176,11 +226,19 @@ def get_video_info(url, cookies=None):
             "playlist_items": items,
         }
 
-    # Not a playlist — check if this is a bilibili single video in a 合集
+    # Not a yt-dlp playlist — check if this is a bilibili video with a wider collection
     import re
+    # 1) UGC 合集 (single /video/BVxxx that belongs to a user collection)
     m = re.search(r'bilibili\.com/video/([A-Za-z0-9]+)', url)
     if m:
         collection = _get_bilibili_collection(m.group(1))
+        if collection:
+            return collection
+
+    # 2) Bangumi / PGC season (single episode URL e.g. /bangumi/play/ep779777)
+    sid = info.get("season_id")
+    if sid:
+        collection = _get_bilibili_bangumi_season(sid)
         if collection:
             return collection
 
