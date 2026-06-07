@@ -276,13 +276,17 @@ def api_download():
     if os.path.exists(filepath):
         return jsonify({"status": "exists", "filename": filename})
 
+    part_file = filepath + ".part"
+    initial_bytes = os.path.getsize(part_file) if os.path.exists(part_file) else 0
+
     with downloads_lock:
         downloads_status[track_id] = {
             "status": "downloading",
             "name": name,
             "progress": 0,
-            "downloaded_bytes": 0,
+            "downloaded_bytes": initial_bytes,
             "total_bytes": 0,
+            "resumed": initial_bytes,
             "size": result.get("size", 0),
             "br": result.get("br", "?"),
             "filepath": filepath,
@@ -294,7 +298,7 @@ def api_download():
             last_bytes = [0]
             logger.info("下载线程启动: %s → %s", name, filename)
 
-            def on_progress(downloaded, total):
+            def on_progress(downloaded, total, resumed=0):
                 if total:
                     pct = int(downloaded / total * 100)
                     if pct == last_pct[0]:
@@ -313,6 +317,7 @@ def api_download():
                         downloads_status[track_id]["progress"] = pct
                         downloads_status[track_id]["downloaded_bytes"] = downloaded
                         downloads_status[track_id]["total_bytes"] = total
+                        downloads_status[track_id]["resumed"] = resumed
 
             dl_headers = {"Referer": "https://www.bilibili.com/", "User-Agent": "Mozilla/5.0"} if source == "bilibili" else None
             download_file(url, filepath, progress_callback=on_progress, extra_headers=dl_headers)

@@ -1855,7 +1855,7 @@ function addDownloadingItem(id, name, artist) {
       </div>
       <div class="dl-info">
         <div class="dl-title">${esc(name)}</div>
-        <div class="dl-artist">${esc(artist)}</div>
+        <div class="dl-artist"><span id="dl-resume-${id}" class="hidden" style="color:var(--md-tertiary)">⏳ 续传中… </span>${esc(artist)}</div>
       </div>
       <span id="dl-pct-${id}" class="dl-pct">0%</span>
     </div>
@@ -1888,6 +1888,11 @@ function pollDownload(id, name) {
             bar.style.width = '100%';
             pct.textContent = fmtSize(s.downloaded_bytes);
           }
+        }
+        // Show resume indicator
+        const resumeEl = document.getElementById(`dl-resume-${id}`);
+        if (resumeEl && s.resumed) {
+          resumeEl.classList.remove('hidden');
         }
 
         if (s.status === 'done') {

@@ -97,14 +97,40 @@ def format_artist_str(artists, separator=" / "):
     return ""
 
 
-def download_file(url, filepath, progress_callback=None, extra_headers=None):
+def download_file(url, filepath, progress_callback=None, extra_headers=None, resume=True):
     t0 = time.time()
+    part_file = filepath + ".part"
+    resumed = 0
+
+    headers = extra_headers.copy() if extra_headers else {}
+    if resume and os.path.exists(part_file):
+        resumed = os.path.getsize(part_file)
+        if resumed > 0:
+            headers["Range"] = f"bytes={resumed}-"
+            logger.info("续传: %s (已有 %.1f MB)", os.path.basename(filepath), resumed / 1048576)
+
     logger.info("开始下载: %s", os.path.basename(filepath))
     logger.debug("下载 URL: %s", url[:120])
-    headers = extra_headers or {}
     resp = requests.get(url, stream=True, timeout=120, headers=headers)
-    resp.raise_for_status()
-    total = int(resp.headers.get("content-length", 0))
+
+    # Handle resume: 206 = server accepted range, 200 = server ignored range (restart)
+    if resp.status_code == 206:
+        mode = "ab"
+        total = resumed + int(resp.headers.get("content-length", 0))
+        logger.debug("续传模式: 已下载 %.1f MB, 剩余 %.1f MB", resumed / 1048576, (total - resumed) / 1048576)
+    elif resp.status_code == 200:
+        mode = "wb"
+        total = int(resp.headers.get("content-length", 0))
+        resumed = 0
+        if os.path.exists(part_file):
+            os.remove(part_file)
+        if headers.get("Range"):
+            logger.debug("服务器不支持 Range，重新下载")
+    else:
+        resp.raise_for_status()
+        mode = "wb"
+        total = int(resp.headers.get("content-length", 0))
+
     logger.debug("文件大小: %.1f MB", total / 1048576 if total else 0)
 
     progress_ctx = None
@@ -119,20 +145,23 @@ def download_file(url, filepath, progress_callback=None, extra_headers=None):
             TimeRemainingColumn(),
         )
         progress_ctx.__enter__()
-        task = progress_ctx.add_task("", total=total or None)
+        task = progress_ctx.add_task("", total=total or None, completed=resumed)
 
-    downloaded = 0
-    with open(filepath, "wb") as f:
+    downloaded = resumed
+    with open(part_file, mode) as f:
         for chunk in resp.iter_content(chunk_size=8192):
             f.write(chunk)
             downloaded += len(chunk)
             if progress_callback:
-                progress_callback(downloaded, total)
+                progress_callback(downloaded, total, resumed)
             elif task is not None:
                 progress_ctx.update(task, advance=len(chunk))
 
     if progress_ctx:
         progress_ctx.__exit__(None, None, None)
+
+    # Rename .part → final filename on success
+    os.rename(part_file, filepath)
 
     elapsed = time.time() - t0
     size_mb = os.path.getsize(filepath) / 1048576

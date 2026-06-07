@@ -367,6 +367,7 @@ def download_video(url, format_id="best", output_dir=None, progress_callback=Non
         "outtmpl": os.path.join(output_dir, "%(title)s.%(ext)s"),
         "progress_hooks": [_progress_hook],
         "merge_output_format": "mp4",
+        "continuedl": True,
         "writesubtitles": False,
         "writeautomaticsub": False,
         "writethumbnail": False,
