@@ -91,6 +91,8 @@ def _embed_track_metadata(filepath, name, artists, album, pic_data):
 
 
 def resolve_outdir(outdir):
+    if outdir:
+        outdir = os.path.expanduser(outdir)
     if not outdir:
         return DOWNLOAD_DIR
     if os.path.isabs(outdir):
@@ -618,6 +620,29 @@ def serve_video_file(filename):
     if not os.path.isfile(filepath):
         return jsonify({"error": "文件不存在"}), 404
     return send_file(filepath, as_attachment=True)
+
+
+@app.route("/api/video/file/delete", methods=["POST"])
+def api_video_delete_file():
+    data = request.get_json() or {}
+    outdir = resolve_outdir(data.get("outdir", ""))
+    # If no explicit outdir, video downloads default to ~/Videos
+    if not data.get("outdir", "").strip():
+        outdir = os.path.join(os.path.expanduser("~"), "Videos")
+    filename = data.get("filename", "").strip()
+    if not filename:
+        return jsonify({"error": "缺少文件名"}), 400
+    filepath = os.path.join(outdir, filename)
+    if not validate_path(filepath, outdir):
+        return jsonify({"error": "非法文件路径"}), 400
+    if not os.path.isfile(filepath):
+        return jsonify({"error": "文件不存在"}), 404
+    try:
+        os.remove(filepath)
+        logger.info("已删除视频文件: %s", filename)
+        return jsonify({"status": "deleted", "filename": filename})
+    except OSError as e:
+        return jsonify({"error": str(e)}), 500
 
 
 def main():

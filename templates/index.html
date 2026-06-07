@@ -2419,8 +2419,9 @@ function addVideoProgress(vid, title) {
 function deleteFile(btn, callback) {
   const filename = btn.dataset.filename;
   const outdir = btn.dataset.outdir;
+  const api = btn.dataset.api || '/api/file/delete';
   if (!confirm('删除 ' + filename + ' ？')) return;
-  fetch('/api/file/delete', {
+  fetch(api, {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
     body: JSON.stringify({filename, outdir})
@@ -2452,7 +2453,7 @@ function loadVideoFiles() {
             <span class="msi">download</span>
             下载
           </a>
-          <button data-filename="${esc(f.name)}" data-outdir="${esc(getVideoOutdir())}" onclick="event.preventDefault();deleteFile(this,loadVideoFiles)" class="btn-icon btn-delete" title="删除">
+          <button data-api="/api/video/file/delete" data-filename="${esc(f.name)}" data-outdir="${esc(getVideoOutdir())}" onclick="event.preventDefault();deleteFile(this,loadVideoFiles)" class="btn-icon btn-delete" title="删除">
             <span class="msi">delete</span>
           </button>
         </div>
