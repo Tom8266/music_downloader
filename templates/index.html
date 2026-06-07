@@ -1930,13 +1930,15 @@ function loadDownloaded() {
   fetch(`/api/downloaded?outdir=${encodeURIComponent(getOutdir())}`)
     .then(r => r.json())
     .then(files => {
+      const hidden = getHiddenFiles();
+      const visible = files.filter(f => !hidden.has(_hiddenKey(f.name, getOutdir())));
       const downloading = document.getElementById('downloadingList').children.length;
-      if (files.length === 0 && downloading === 0) {
+      if (visible.length === 0 && downloading === 0) {
         section.classList.add('hidden');
         return;
       }
       section.classList.remove('hidden');
-      list.innerHTML = files.map((f, i) => `
+      list.innerHTML = visible.map((f, i) => `
         <div class="dl-file-item fade-in" style="animation-delay:${i*0.03}s">
           <div class="dl-file-icon ${f.ext !== '.lrc' && f.ext !== '.jpg' && f.ext !== '.png' ? 'music-icon' : ''}">
             ${f.ext === '.lrc'
@@ -1951,6 +1953,9 @@ function loadDownloaded() {
             <span class="msi">download</span>
             下载
           </a>
+          <button data-filename="${esc(f.name)}" data-outdir="${esc(getOutdir())}" onclick="event.preventDefault();hideFile(this,loadDownloaded)" class="btn-icon btn-delete" title="隐藏">
+            <span class="msi">visibility_off</span>
+          </button>
           <button data-filename="${esc(f.name)}" data-outdir="${esc(getOutdir())}" onclick="event.preventDefault();deleteFile(this,loadDownloaded)" class="btn-icon btn-delete" title="删除">
             <span class="msi">delete</span>
           </button>
@@ -2421,6 +2426,23 @@ function addVideoProgress(vid, title) {
   pollVideoProgress(vid);
 }
 
+// ── Hidden File List ──────────────────────────────────────────────────
+function _hiddenKey(filename, outdir) { return (outdir || '') + '|' + filename; }
+
+function getHiddenFiles() {
+  try { return new Set(JSON.parse(localStorage.getItem('md_hidden_files') || '[]')); }
+  catch(e) { return new Set(); }
+}
+
+function hideFile(btn, callback) {
+  const key = _hiddenKey(btn.dataset.filename, btn.dataset.outdir);
+  const hidden = getHiddenFiles();
+  hidden.add(key);
+  localStorage.setItem('md_hidden_files', JSON.stringify([...hidden]));
+  showToast('已隐藏: ' + btn.dataset.filename, 'info');
+  if (callback) callback();
+}
+
 function deleteFile(btn, callback) {
   const filename = btn.dataset.filename;
   const outdir = btn.dataset.outdir;
@@ -2446,8 +2468,10 @@ function loadVideoFiles() {
   fetch('/api/video/downloaded?outdir=' + encodeURIComponent(getVideoOutdir()))
     .then(r => r.json())
     .then(files => {
-      if (!files.length) { list.innerHTML = ''; return; }
-      list.innerHTML = files.map((f, i) => `
+      const hidden = getHiddenFiles();
+      const visible = files.filter(f => !hidden.has(_hiddenKey(f.name, getVideoOutdir())));
+      if (!visible.length) { list.innerHTML = ''; return; }
+      list.innerHTML = visible.map((f, i) => `
         <div class="dl-file-item fade-in" style="animation-delay:${i*0.03}s">
           <div class="dl-file-icon ${f.ext === '.m4a' ? '' : 'music-icon'}">
             ${f.ext === '.m4a' ? '<span class="msi">audio_file</span>' : '<span class="msi">videocam</span>'}
@@ -2458,6 +2482,9 @@ function loadVideoFiles() {
             <span class="msi">download</span>
             下载
           </a>
+          <button data-filename="${esc(f.name)}" data-outdir="${esc(getVideoOutdir())}" onclick="event.preventDefault();hideFile(this,loadVideoFiles)" class="btn-icon btn-delete" title="隐藏">
+            <span class="msi">visibility_off</span>
+          </button>
           <button data-api="/api/video/file/delete" data-filename="${esc(f.name)}" data-outdir="${esc(getVideoOutdir())}" onclick="event.preventDefault();deleteFile(this,loadVideoFiles)" class="btn-icon btn-delete" title="删除">
             <span class="msi">delete</span>
           </button>
