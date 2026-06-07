@@ -1155,6 +1155,43 @@ audio::-webkit-media-controls-time-remaining-display {
   color: var(--md-on-surface);
 }
 
+/* ── Playlist Checklist ── */
+.playlist-checklist {
+  max-height: 240px;
+  overflow-y: auto;
+  border: 1px solid var(--md-outline-variant);
+  border-radius: var(--shape-sm);
+  padding: 4px;
+  margin-top: 8px;
+}
+.playlist-checklist label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 10px;
+  border-radius: var(--shape-sm);
+  cursor: pointer;
+  font: 400 13px/20px system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+  color: var(--md-on-surface);
+  transition: background var(--duration-short2) var(--motion-standard);
+}
+.playlist-checklist label:hover {
+  background: rgba(202,196,208, var(--state-hover));
+}
+.playlist-checklist input[type="checkbox"] {
+  accent-color: var(--md-primary);
+  width: 16px; height: 16px;
+  flex-shrink: 0;
+  cursor: pointer;
+}
+.playlist-select-all {
+  border-bottom: 1px solid var(--md-outline-variant);
+  margin-bottom: 4px;
+  padding-bottom: 8px !important;
+  font-weight: 500;
+  color: var(--md-primary) !important;
+}
+
 /* ── Input Clear Button ── */
 .input-clear-btn {
   display: inline-flex; align-items: center; justify-content: center;
@@ -1428,12 +1465,17 @@ audio::-webkit-media-controls-time-remaining-display {
             <option value="720">720p</option>
             <option value="480">480p</option>
           </select>
-          <button onclick="startVideoDownload()" class="btn-filled-accent">
+          <button onclick="startVideoDownload()" class="btn-filled-accent" id="videoDownloadBtn">
             <span class="msi">download</span>
             下载
           </button>
+          <button onclick="startBatchDownload()" class="btn-filled-accent hidden" id="videoBatchDownloadBtn">
+            <span class="msi">download</span>
+            <span id="batchDownloadLabel">下载选中 (0)</span>
+          </button>
         </div>
       </div>
+      <div id="playlistChecklist" class="hidden playlist-checklist"></div>
     </div>
 
     <div id="videoProgress" class="downloading-list"></div>
@@ -2227,16 +2269,29 @@ function renderVideoInfo(info) {
 
   const sel = document.getElementById('videoQuality');
   const pq = document.getElementById('videoPlaylistQuality');
+  const checklist = document.getElementById('playlistChecklist');
+  const dlBtn = document.getElementById('videoDownloadBtn');
+  const batchBtn = document.getElementById('videoBatchDownloadBtn');
   if (info.is_playlist) {
-    // Playlist: show part selector + quality selector
-    sel.innerHTML = '<option value="">选择分P</option>';
-    (info.playlist_items || []).forEach((item, i) => {
-      sel.innerHTML += `<option value="${esc(item.url || item.id)}">P${i + 1} ${esc(item.title)}</option>`;
-    });
-    sel.style.maxWidth = '200px';
+    // Playlist: show checklist + quality selector, hide format select & single dl btn
+    sel.classList.add('hidden');
+    dlBtn.classList.add('hidden');
+    batchBtn.classList.remove('hidden');
     pq.classList.remove('hidden');
+    checklist.classList.remove('hidden');
+    let items = '';
+    (info.playlist_items || []).forEach((item, i) => {
+      items += `<label><input type="checkbox" value="${esc(item.url || item.id)}" data-title="${esc(item.title)}" data-index="${i}" onchange="updateBatchLabel()">P${i + 1} ${esc(item.title)}</label>`;
+    });
+    checklist.innerHTML = `<label class="playlist-select-all"><input type="checkbox" onchange="toggleAllParts(this)"> 全选 / 取消全选</label>${items}`;
+    updateBatchLabel();
   } else {
+    // Single video: show format selector, hide playlist UI
+    sel.classList.remove('hidden');
+    dlBtn.classList.remove('hidden');
+    batchBtn.classList.add('hidden');
     pq.classList.add('hidden');
+    checklist.classList.add('hidden');
     sel.style.maxWidth = '200px';
     sel.innerHTML = (info.formats || [])
       .filter(f => f.has_video && f.has_audio)
@@ -2262,11 +2317,6 @@ function startVideoDownload() {
   let url = document.getElementById('videoUrl').value.trim();
   if (!url) return;
   let quality = document.getElementById('videoQuality').value || D.quality;
-  // If this is a playlist and user picked a specific video URL
-  if (quality.startsWith('http')) {
-    url = quality;
-    quality = document.getElementById('videoPlaylistQuality').value || D.quality;
-  }
   const outdir = getVideoOutdir();
   const cookie = getVideoCookie();
   showToast('开始下载视频...', 'info');
@@ -2282,6 +2332,61 @@ function startVideoDownload() {
       addVideoProgress(data.id, data.title);
     })
     .catch(err => showToast(err.message || '下载失败', 'error'));
+}
+
+// ── Playlist Batch Download ──────────────────────────────────────────
+function toggleAllParts(btn) {
+  const checklist = document.getElementById('playlistChecklist');
+  checklist.querySelectorAll('input[type="checkbox"]').forEach(cb => {
+    if (cb !== btn) cb.checked = btn.checked;
+  });
+  updateBatchLabel();
+}
+
+function updateBatchLabel() {
+  const checklist = document.getElementById('playlistChecklist');
+  const checked = checklist.querySelectorAll('input[data-index]:checked').length;
+  const label = document.getElementById('batchDownloadLabel');
+  if (label) label.textContent = '下载选中 (' + checked + ')';
+}
+
+function startBatchDownload() {
+  const checklist = document.getElementById('playlistChecklist');
+  const checked = checklist.querySelectorAll('input[type="checkbox"]:checked');
+  const items = [];
+  checked.forEach(cb => {
+    if (cb.dataset.title) items.push({ url: cb.value, title: cb.dataset.title });
+  });
+  if (!items.length) {
+    showToast('请至少选择一个视频', 'warning');
+    return;
+  }
+  const quality = document.getElementById('videoPlaylistQuality').value || D.quality;
+  const outdir = getVideoOutdir();
+  const cookie = getVideoCookie();
+  showToast('开始批量下载 ' + items.length + ' 个视频...', 'info');
+
+  let idx = 0;
+  function next() {
+    if (idx >= items.length) return;
+    const item = items[idx];
+    fetch('/api/video/download', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({url: item.url, quality, outdir, cookie})
+    })
+      .then(r => r.json())
+      .then(data => {
+        if (data.error) throw new Error(data.error);
+        addVideoProgress(data.id, data.title);
+      })
+      .catch(err => showToast(item.title + ': ' + err.message, 'error'))
+      .finally(() => {
+        idx++;
+        setTimeout(next, 600);
+      });
+  }
+  next();
 }
 
 function addVideoProgress(vid, title) {
