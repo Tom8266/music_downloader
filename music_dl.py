@@ -13,6 +13,7 @@ from mutagen.id3 import ID3, APIC, USLT, TIT2, TPE1, TALB, TCON, TYER, error as 
 from mutagen.flac import FLAC, Picture
 from mutagen.mp4 import MP4, MP4Cover
 from rich.progress import Progress, BarColumn, TextColumn, TimeRemainingColumn, TransferSpeedColumn, DownloadColumn
+from video_dl import get_video_info, download_video, QUALITY_PRESETS
 
 logger = logging.getLogger("music_dl")
 
@@ -21,7 +22,7 @@ DEFAULT_SOURCE = "netease"
 DEFAULT_BR = "320"
 TIMEOUT = 30
 
-SOURCES = ["netease", "kuwo", "joox"]
+SOURCES = ["netease", "kuwo", "joox", "bilibili"]
 
 
 def setup_logging(level=logging.INFO, log_file=None):
@@ -96,11 +97,12 @@ def format_artist_str(artists, separator=" / "):
     return ""
 
 
-def download_file(url, filepath, progress_callback=None):
+def download_file(url, filepath, progress_callback=None, extra_headers=None):
     t0 = time.time()
     logger.info("开始下载: %s", os.path.basename(filepath))
     logger.debug("下载 URL: %s", url[:120])
-    resp = requests.get(url, stream=True, timeout=120)
+    headers = extra_headers or {}
+    resp = requests.get(url, stream=True, timeout=120, headers=headers)
     resp.raise_for_status()
     total = int(resp.headers.get("content-length", 0))
     logger.debug("文件大小: %.1f MB", total / 1048576 if total else 0)
@@ -109,7 +111,7 @@ def download_file(url, filepath, progress_callback=None):
     task = None
     if not progress_callback:
         progress_ctx = Progress(
-            TextColumn("  [bold green]⬇[/bold green]"),
+            TextColumn("  [bold green]Download[/bold green]"),
             BarColumn(),
             "[progress.percentage]{task.percentage:>3.0f}%",
             DownloadColumn(),
@@ -290,7 +292,7 @@ def cmd_download(args):
     ext = ".mp3"
     if "flac" in url.lower():
         ext = ".flac"
-    elif "m4a" in url.lower():
+    elif "m4a" in url.lower() or "m4s" in url.lower():
         ext = ".m4a"
 
     filename = sanitize_filename(f"{name}{filename_suffix}{ext}")
@@ -308,7 +310,8 @@ def cmd_download(args):
     print(f"歌曲: {name}{filename_suffix}")
     print(f"音质: {actual_br}  大小: {size_kb} KB")
 
-    download_file(url, filepath)
+    dl_headers = {"Referer": "https://www.bilibili.com/", "User-Agent": "Mozilla/5.0"} if args.source == "bilibili" else None
+    download_file(url, filepath, extra_headers=dl_headers)
 
     pic_data = None
     pic_src = None
@@ -329,7 +332,7 @@ def cmd_download(args):
         logger.exception("嵌入元数据失败: %s", filepath)
         print(f"  嵌入元数据失败: {e}")
 
-    print(f"\n✅ 下载完成: {filepath}")
+    print(f"\n下载完成: {filepath}")
     logger.info("CLI 下载完成: %s", filepath)
 
 
@@ -366,9 +369,42 @@ def cmd_pic(args):
         print(f"未获取到专辑图: {result}")
 
 
+def cmd_video(args):
+    if args.action == "info":
+        logger.info("获取视频信息: %s", args.url)
+        info = get_video_info(args.url)
+        print(f"\n{info['title']}")
+        if info.get("uploader"):
+            print(f"   上传者: {info['uploader']}")
+        if info.get("duration"):
+            m, s = divmod(info["duration"], 60)
+            print(f"   时长: {m}:{s:02d}")
+        if info.get("thumbnail"):
+            print(f"   封面: {info['thumbnail']}")
+        print(f"\n可用格式 ({len(info['formats'])} 个):\n")
+        for f in info["formats"]:
+            size_str = f"  {f['filesize'] / 1048576:.1f} MB" if f["filesize"] else ""
+            type_str = "[V+A]" if f["has_video"] and f["has_audio"] else ("[V]" if f["has_video"] else "[A]")
+            print(f"  {type_str} {f['resolution']:10s} {f['ext']:6s} {f['id']:12s}{size_str}")
+        print()
+        print("预设质量: " + ", ".join(QUALITY_PRESETS.keys()))
+    elif args.action == "download":
+        quality = args.quality or "best"
+        outdir = args.outdir or os.path.join(os.path.expanduser("~"), "Videos")
+        logger.info("视频下载: %s quality=%s outdir=%s", args.url, quality, outdir)
+        print(f"\n下载视频: {args.url}")
+        print(f"   质量: {quality}  输出: {outdir}\n")
+        filepath = download_video(args.url, quality, outdir)
+        if filepath:
+            print(f"\n下载完成: {filepath}")
+        else:
+            print("\n下载失败")
+            sys.exit(1)
+
+
 def main():
     parser = argparse.ArgumentParser(
-        description="GD Studio Music API CLI — 音乐搜索/下载工具",
+        description="GD Studio Music API CLI — 音乐搜索/下载/视频下载工具",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 示例:
@@ -381,6 +417,8 @@ def main():
   %(prog)s download abc123 --no-pic                # 不嵌入封面
   %(prog)s lyric abc123                            # 获取歌词
   %(prog)s pic abc123                              # 获取专辑图
+  %(prog)s video info <url>                        # 查看视频信息
+  %(prog)s video download <url> -q 720             # 下载视频
         """,
     )
     parser.add_argument("-v", "--verbose", action="store_true", help="详细日志输出 (DEBUG 级别)")
@@ -416,6 +454,12 @@ def main():
     p_pic.add_argument("--size", choices=["300", "500"], default="500", help="图片尺寸 (默认: 500)")
     p_pic.add_argument("--save", action="store_true", help="保存图片")
 
+    p_video = sub.add_parser("video", help="视频下载 (YouTube, Bilibili 等)")
+    p_video.add_argument("action", choices=["info", "download"], help="info=查看信息, download=下载")
+    p_video.add_argument("url", help="视频链接")
+    p_video.add_argument("-q", "--quality", choices=list(QUALITY_PRESETS.keys()), default="best", help="下载质量 (默认: best)")
+    p_video.add_argument("-o", "--outdir", default=None, help="输出目录 (默认: ~/Videos)")
+
     args = parser.parse_args()
 
     level = logging.DEBUG if args.verbose else logging.INFO
@@ -431,6 +475,7 @@ def main():
             "download": lambda: cmd_download(args),
             "lyric": lambda: cmd_lyric(args),
             "pic": lambda: cmd_pic(args),
+            "video": lambda: cmd_video(args),
         }[args.cmd]()
     except requests.exceptions.RequestException as e:
         print(f"网络错误: {e}", file=sys.stderr)

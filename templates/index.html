@@ -817,8 +817,7 @@ body {
   align-items: center;
   justify-content: center;
   padding: 16px;
-  background: rgba(0,0,0,.4);
-  backdrop-filter: blur(2px);
+  background: rgba(0,0,0,.55);
 }
 .modal-scrim.hidden { display: none !important; }
 
@@ -908,6 +907,15 @@ body {
   transition: background-color 5000s ease-in-out 0s;
 }
 .field-group select option {
+  background: var(--md-elev-3);
+  color: var(--md-on-surface);
+}
+#videoThumb img {
+  width: 100%; height: 100%;
+  object-fit: cover;
+}
+#videoQuality option,
+#videoPlaylistQuality option {
   background: var(--md-elev-3);
   color: var(--md-on-surface);
 }
@@ -1238,6 +1246,20 @@ audio::-webkit-media-controls-time-remaining-display {
 
     <!-- Settings Toggle -->
     <div class="top-bar">
+      <!-- Mode Toggle -->
+      <div id="modeGroup" class="segmented-buttons">
+        <button type="button" class="segmented-btn selected" data-mode="music" onclick="switchMode('music')">
+          <span class="msi check-icon">check</span>
+          <span class="msi">music_note</span>
+          音乐
+        </button>
+        <button type="button" class="segmented-btn" data-mode="video" onclick="switchMode('video')">
+          <span class="msi check-icon">check</span>
+          <span class="msi">videocam</span>
+          视频
+        </button>
+      </div>
+      <!-- Music source selector (music mode only) -->
       <div id="sourceGroup" class="segmented-buttons">
         <button type="button" class="segmented-btn selected" data-value="netease" onclick="selectSource(this)">
           <span class="msi check-icon">check</span>
@@ -1251,6 +1273,10 @@ audio::-webkit-media-controls-time-remaining-display {
           <span class="msi check-icon">check</span>
           JOOX
         </button>
+        <button type="button" class="segmented-btn" data-value="bilibili" onclick="selectSource(this)">
+          <span class="msi check-icon">check</span>
+          哔哩哔哩
+        </button>
       </div>
       <button onclick="toggleSettings()" class="icon-btn-outlined" title="设置">
         <span class="msi">settings</span>
@@ -1258,10 +1284,15 @@ audio::-webkit-media-controls-time-remaining-display {
       </button>
     </div>
 
+    <!-- ═══ Music Content ═══ -->
+    <div id="musicContent">
     <!-- Search Bar -->
     <div class="search-bar">
       <span class="msi leading-icon">search</span>
-      <input id="keyword" type="text" placeholder="输入歌名、歌手或专辑…" autofocus autocomplete="off">
+      <input id="keyword" type="text" placeholder="输入歌名、歌手或专辑…" autofocus autocomplete="off" oninput="toggleClearBtn(this)">
+      <button id="clearKeyword" class="hidden" onclick="document.getElementById('keyword').value='';toggleClearBtn(document.getElementById('keyword'));document.getElementById('keyword').focus()" style="display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border:none;border-radius:50%;background:transparent;color:var(--md-on-surface-variant);cursor:pointer;flex-shrink:0;transition:background var(--duration-short2) var(--motion-standard)" onmouseover="this.style.background='rgba(202,196,208,var(--state-hover))'" onmouseout="this.style.background='transparent'" title="清除">
+        <span class="msi" style="font-size:18px">close</span>
+      </button>
     </div>
 
     <!-- Hidden source select for JS compat -->
@@ -1269,6 +1300,7 @@ audio::-webkit-media-controls-time-remaining-display {
       <option value="netease">网易云</option>
       <option value="kuwo">酷我</option>
       <option value="joox">JOOX</option>
+      <option value="bilibili">哔哩哔哩</option>
     </select>
 
     <!-- Status -->
@@ -1305,6 +1337,65 @@ audio::-webkit-media-controls-time-remaining-display {
       <div id="downloadingList" class="downloading-list"></div>
       <div id="downloadsList" class="downloaded-list"></div>
     </div>
+
+    </div><!-- /#musicContent -->
+
+    <!-- ═══ Video Content ═══ -->
+    <div id="videoContent" class="hidden">
+
+    <!-- Video Download Section -->
+    <div class="downloads-header">
+      <div class="icon-circle">
+        <span class="msi">videocam</span>
+      </div>
+      <h2>视频下载</h2>
+    </div>
+
+    <div class="search-bar" style="margin-bottom:16px">
+      <span class="msi leading-icon">link</span>
+      <input id="videoUrl" type="text" placeholder="粘贴视频链接 (YouTube, Bilibili 等)" autocomplete="off" oninput="toggleClearBtn(this)">
+      <button id="clearVideoUrl" class="hidden" onclick="document.getElementById('videoUrl').value='';toggleClearBtn(document.getElementById('videoUrl'));document.getElementById('videoInfo').classList.add('hidden');document.getElementById('videoUrl').focus()" style="display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border:none;border-radius:50%;background:transparent;color:var(--md-on-surface-variant);cursor:pointer;flex-shrink:0;transition:background var(--duration-short2) var(--motion-standard)" onmouseover="this.style.background='rgba(202,196,208,var(--state-hover))'" onmouseout="this.style.background='transparent'" title="清除">
+        <span class="msi" style="font-size:18px">close</span>
+      </button>
+    </div>
+
+    <!-- Loading indicator -->
+    <div id="videoLoading" class="hidden status-bar">
+      <div class="spin-wrap">
+        <span class="msi spin" style="font-size:20px;color:var(--md-primary)">progress_activity</span>
+        <span>获取视频信息中...</span>
+      </div>
+    </div>
+
+    <div id="videoInfo" class="hidden">
+      <div class="fade-in" style="display:flex;align-items:center;gap:14px;padding:14px 16px;border-radius:var(--shape-md);background:var(--md-elev-1)">
+        <div id="videoThumb" style="width:64px;height:64px;border-radius:var(--shape-sm);overflow:hidden;flex-shrink:0;background:var(--md-surface-variant);display:flex;align-items:center;justify-content:center">
+          <span class="msi" style="font-size:28px;color:var(--md-on-surface-variant)">videocam</span>
+        </div>
+        <div style="flex:1;min-width:0">
+          <div id="videoTitle" style="font:400 15px/22px 'Roboto',sans-serif;color:var(--md-on-surface);overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></div>
+          <div id="videoMeta" style="font:400 12px/16px 'Roboto',sans-serif;color:var(--md-on-surface-variant);margin-top:2px"></div>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;flex-shrink:0">
+          <select id="videoQuality" style="padding:8px 32px 8px 12px;border:1px solid var(--md-outline);border-radius:var(--shape-xs);background:transparent;color:var(--md-on-surface);font:400 13px/20px 'Roboto',sans-serif;appearance:none;cursor:pointer;max-width:200px">
+          </select>
+          <select id="videoPlaylistQuality" class="hidden" style="padding:8px 32px 8px 12px;border:1px solid var(--md-outline);border-radius:var(--shape-xs);background:transparent;color:var(--md-on-surface);font:400 13px/20px 'Roboto',sans-serif;appearance:none;cursor:pointer;max-width:140px">
+            <option value="best">最佳质量</option>
+            <option value="1080">1080p</option>
+            <option value="720">720p</option>
+            <option value="480">480p</option>
+          </select>
+          <button onclick="startVideoDownload()" class="btn-filled-accent">
+            <span class="msi">download</span>
+            下载
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div id="videoProgress" class="downloading-list"></div>
+    <div id="videoFiles" class="downloaded-list"></div>
+    </div><!-- /#videoContent -->
   </div>
 
   <!-- Settings Modal -->
@@ -1332,6 +1423,7 @@ audio::-webkit-media-controls-time-remaining-display {
           <option value="netease">网易云</option>
           <option value="kuwo">酷我</option>
           <option value="joox">JOOX</option>
+          <option value="bilibili">哔哩哔哩</option>
         </select>
       </div>
       <div class="field-group">
@@ -1344,6 +1436,26 @@ audio::-webkit-media-controls-time-remaining-display {
           <div id="dirBreadcrumb" class="dir-breadcrumb"></div>
           <div id="dirList" class="dir-list"></div>
         </div>
+      </div>
+      <!-- Video Settings -->
+      <div class="divider" style="margin:8px 0 16px"></div>
+      <div class="field-group">
+        <label style="color:var(--md-primary)">视频设置</label>
+      </div>
+      <div class="field-group">
+        <label>视频下载目录</label>
+        <div class="input-group">
+          <input id="setVideoOutdir" type="text" placeholder="~/Videos">
+          <button onclick="browseVideoOutdir()" class="btn-tonal">浏览</button>
+        </div>
+        <div id="videoDirBrowser" class="hidden dir-browser">
+          <div id="videoDirBreadcrumb" class="dir-breadcrumb"></div>
+          <div id="videoDirList" class="dir-list"></div>
+        </div>
+      </div>
+      <div class="field-group">
+        <label>Cookie — Netscape 格式</label>
+        <textarea id="setCookie" rows="3" placeholder="用 Get cookies.txt LOCALLY 插件导出后粘贴…&#10;用于解锁需登录的视频（如 B站大会员）" style="width:100%;padding:10px 14px;border:1px solid var(--md-outline);border-radius:var(--shape-xs);background:transparent;color:var(--md-on-surface);font:400 12px/18px 'Roboto',sans-serif;resize:vertical;outline:none"></textarea>
       </div>
       <div class="modal-actions">
         <button onclick="saveSettings()" class="btn-filled">保存</button>
@@ -1385,6 +1497,36 @@ function selectSource(btn) {
   group.querySelectorAll('.segmented-btn').forEach(b => b.classList.remove('selected'));
   btn.classList.add('selected');
   document.getElementById('source').value = btn.dataset.value;
+}
+
+// ── Mode Switching ────────────────────────────────────────────────────
+function switchMode(mode) {
+  const group = document.getElementById('modeGroup');
+  group.querySelectorAll('.segmented-btn').forEach(b => b.classList.remove('selected'));
+  group.querySelector(`[data-mode="${mode}"]`).classList.add('selected');
+
+  const musicContent = document.getElementById('musicContent');
+  const videoContent = document.getElementById('videoContent');
+  const sourceGroup = document.getElementById('sourceGroup');
+
+  if (mode === 'music') {
+    musicContent.classList.remove('hidden');
+    videoContent.classList.add('hidden');
+    sourceGroup.style.display = '';
+    document.getElementById('keyword').focus();
+  } else {
+    musicContent.classList.add('hidden');
+    videoContent.classList.remove('hidden');
+    sourceGroup.style.display = 'none';
+    toggleClearBtn(document.getElementById('videoUrl'));
+    document.getElementById('videoUrl').focus();
+    loadVideoFiles();
+  }
+  localStorage.setItem('md_mode', mode);
+}
+
+function getMode() {
+  return localStorage.getItem('md_mode') || 'music';
 }
 
 function doSearch(page = 1) {
@@ -1477,14 +1619,23 @@ function renderResults(data, append) {
     resultsEl.appendChild(card);
 
     if (item.pic_id) {
-      fetch(`/api/pic?id=${item.pic_id}&source=${item.source || 'netease'}&size=300`)
-        .then(r => r.json())
-        .then(pic => {
-          if (pic.url) {
-            const thumb = document.getElementById(`thumb-${idx}`);
-            if (thumb) thumb.innerHTML = `<img src="${pic.url}" onerror="this.parentElement.innerHTML='<span class=\\'msi\\' style=\\'font-size:28px;color:var(--md-on-surface-variant)\\'>music_note</span>'">`;
-          }
-        }).catch(() => {});
+      const src = (item.source || '') === 'bilibili' && item.pic_id.startsWith('//')
+        ? 'https:' + item.pic_id
+        : null;
+      if (src) {
+        // Bilibili: pic_id is already an image URL, use it directly
+        const thumb = document.getElementById(`thumb-${idx}`);
+        if (thumb) thumb.innerHTML = `<img src="${src}" referrerpolicy="no-referrer" onerror="this.parentElement.innerHTML='<span class=&#39;msi&#39; style=&#39;font-size:28px;color:var(--md-on-surface-variant)&#39;>music_note</span>'">`;
+      } else {
+        fetch(`/api/pic?id=${item.pic_id}&source=${item.source || 'netease'}&size=300`)
+          .then(r => r.json())
+          .then(pic => {
+            if (pic.url) {
+              const thumb = document.getElementById(`thumb-${idx}`);
+              if (thumb) thumb.innerHTML = `<img src="${pic.url}" referrerpolicy="no-referrer" onerror="this.parentElement.innerHTML='<span class=&#39;msi&#39; style=&#39;font-size:28px;color:var(--md-on-surface-variant)&#39;>music_note</span>'">`;
+            }
+          }).catch(() => {});
+      }
     } else {
       const artists = Array.isArray(item.artist) ? item.artist.join(' ') : (item.artist || '');
       fetch(`/api/cover?name=${encodeURIComponent(item.name || '')}&artist=${encodeURIComponent(artists)}&source=${item.source || 'netease'}`)
@@ -1492,7 +1643,7 @@ function renderResults(data, append) {
         .then(pic => {
           if (pic.url) {
             const thumb = document.getElementById(`thumb-${idx}`);
-            if (thumb) thumb.innerHTML = `<img src="${pic.url}" onerror="this.parentElement.innerHTML='<span class=\\'msi\\' style=\\'font-size:28px;color:var(--md-on-surface-variant)\\'>music_note</span>'">`;
+            if (thumb) thumb.innerHTML = `<img src="${pic.url}" referrerpolicy="no-referrer" onerror="this.parentElement.innerHTML='<span class=&#39;msi&#39; style=&#39;font-size:28px;color:var(--md-on-surface-variant)&#39;>music_note</span>'">`;
           }
         }).catch(() => {});
     }
@@ -1512,37 +1663,51 @@ function playTrack(id, source, name, artist, picId, cardIdx) {
   audio.src = '';
 
   function setCover(url) {
-    const imgHtml = `<img src="${url}">`;
+    const imgHtml = `<img src="${url}" referrerpolicy="no-referrer">`;
     thumb.innerHTML = imgHtml;
     const cardThumb = document.getElementById(`thumb-${cardIdx}`);
     if (cardThumb) cardThumb.innerHTML = imgHtml;
   }
 
-  if (picId) {
-    fetch(`/api/pic?id=${picId}&source=${source}&size=300`)
-      .then(r => r.json())
-      .then(pic => {
-        if (pic.url) setCover(pic.url);
-      }).catch(() => {});
-  } else {
-    fetch(`/api/cover?name=${encodeURIComponent(name)}&artist=${encodeURIComponent(artist)}&source=${source}`)
-      .then(r => r.json())
-      .then(pic => {
-        if (pic.url) setCover(pic.url);
-      }).catch(() => {});
+  function loadCover(picId, source, name, artist) {
+    // Bilibili: pic_id is already an image URL, use it directly
+    if ((source || '') === 'bilibili' && picId && picId.startsWith('//')) {
+      setCover('https:' + picId);
+      return;
+    }
+    if (picId) {
+      fetch(`/api/pic?id=${picId}&source=${source}&size=300`)
+        .then(r => r.json())
+        .then(pic => {
+          if (pic.url) setCover(pic.url);
+        }).catch(() => {});
+    } else {
+      fetch(`/api/cover?name=${encodeURIComponent(name)}&artist=${encodeURIComponent(artist)}&source=${source}`)
+        .then(r => r.json())
+        .then(pic => {
+          if (pic.url) setCover(pic.url);
+        }).catch(() => {});
+    }
   }
+  loadCover(picId, source, name, artist);
 
-  fetch(`/api/url?id=${id}&source=${source}&br=${getBr()}`)
-    .then(r => r.json())
-    .then(data => {
-      if (data.url) {
-        audio.src = data.url;
-        audio.play().catch(() => {});
-      } else {
-        showToast('无法获取播放链接', 'error');
-      }
-    })
-    .catch(() => showToast('获取播放链接失败', 'error'));
+  // Bilibili needs proxy for streaming (CDN requires Referer header)
+  if ((source || '') === 'bilibili') {
+    audio.src = `/api/stream?id=${encodeURIComponent(id)}&source=${source}&br=${getBr()}`;
+    audio.play().catch(() => {});
+  } else {
+    fetch(`/api/url?id=${id}&source=${source}&br=${getBr()}`)
+      .then(r => r.json())
+      .then(data => {
+        if (data.url) {
+          audio.src = data.url;
+          audio.play().catch(() => {});
+        } else {
+          showToast('无法获取播放链接', 'error');
+        }
+      })
+      .catch(() => showToast('获取播放链接失败', 'error'));
+  }
 }
 
 function stopPlayer() {
@@ -1627,7 +1792,7 @@ function pollDownload(id, name) {
 
         if (s.status === 'done') {
           clearInterval(interval);
-          if (pct) pct.textContent = '✅';
+          if (pct) pct.textContent = 'OK';
           if (bar) { bar.classList.remove('indeterminate'); bar.style.width = '100%'; }
           showToast(name + ' 下载完成', 'success');
           loadDownloaded();
@@ -1639,7 +1804,7 @@ function pollDownload(id, name) {
           }, 2000);
         } else if (s.status === 'error') {
           clearInterval(interval);
-          if (pct) { pct.textContent = '❌'; pct.style.color = 'var(--md-error)'; }
+          if (pct) { pct.textContent = 'X'; pct.style.color = 'var(--md-error)'; }
           if (item) item.style.opacity = '0.5';
           showToast(name + ': ' + s.error, 'error');
           setTimeout(() => {
@@ -1681,6 +1846,9 @@ function loadDownloaded() {
             <span class="msi">download</span>
             下载
           </a>
+          <button data-filename="${esc(f.name)}" data-outdir="${esc(getOutdir())}" onclick="event.preventDefault();deleteFile(this,loadDownloaded)" class="btn-icon" style="width:32px;height:32px;flex-shrink:0" title="删除">
+            <span class="msi" style="font-size:18px;color:var(--md-on-surface-variant)">delete</span>
+          </button>
         </div>
       `).join('');
     });
@@ -1715,6 +1883,7 @@ function closeSettings(e) {
   if (e && e.target.id !== 'settingsModal') return;
   document.getElementById('settingsModal').classList.add('hidden');
   document.getElementById('dirBrowser').classList.add('hidden');
+  document.getElementById('videoDirBrowser').classList.add('hidden');
 }
 
 function getSettings() {
@@ -1726,6 +1895,7 @@ function loadSettings() {
   document.getElementById('setQuality').value = s.br || '320';
   document.getElementById('setSource').value = s.source || 'netease';
   document.getElementById('setOutdir').value = s.outdir || '';
+  loadVideoSettings();
 }
 
 function browseOutdir() {
@@ -1790,14 +1960,82 @@ function saveSettings() {
     outdir: document.getElementById('setOutdir').value,
   };
   localStorage.setItem('md_settings', JSON.stringify(s));
+  const vs = {
+    outdir: document.getElementById('setVideoOutdir').value,
+    cookie: document.getElementById('setCookie').value,
+  };
+  localStorage.setItem('md_video_settings', JSON.stringify(vs));
   syncSourceGroup(s.source);
   closeSettings();
+  document.getElementById('videoDirBrowser').classList.add('hidden');
   showToast('设置已保存', 'success');
 }
 
 function getBr() { return getSettings().br || '320'; }
 function getSource() { return getSettings().source || 'netease'; }
 function getOutdir() { return getSettings().outdir || ''; }
+
+// ── Video Settings ────────────────────────────────────────────────────
+function getVideoSettings() {
+  try { return JSON.parse(localStorage.getItem('md_video_settings') || '{}'); } catch(e) { return {}; }
+}
+function getVideoOutdir() { return getVideoSettings().outdir || ''; }
+function getVideoCookie() { return getVideoSettings().cookie || ''; }
+
+function loadVideoSettings() {
+  const s = getVideoSettings();
+  document.getElementById('setVideoOutdir').value = s.outdir || '';
+  document.getElementById('setCookie').value = s.cookie || '';
+}
+
+function browseVideoOutdir() {
+  const browser = document.getElementById('videoDirBrowser');
+  if (browser.classList.contains('hidden')) {
+    browser.classList.remove('hidden');
+    loadVideoDir(document.getElementById('setVideoOutdir').value || '');
+  } else {
+    browser.classList.add('hidden');
+  }
+}
+
+function loadVideoDir(path) {
+  fetch(`/api/dirs?path=${encodeURIComponent(path)}`)
+    .then(r => r.json())
+    .then(data => {
+      if (data.error) { showToast(data.error, 'error'); return; }
+      renderVideoDirBrowser(data);
+    }).catch(() => showToast('无法浏览目录', 'error'));
+}
+
+function renderVideoDirBrowser(data) {
+  const breadcrumb = document.getElementById('videoDirBreadcrumb');
+  const list = document.getElementById('videoDirList');
+  const parts = data.current === '/' ? [''] : data.current.split('/');
+  let html = '';
+  let cumPath = '';
+  parts.forEach((part, i) => {
+    if (i === 0 && data.current.startsWith('/')) { cumPath = '/'; }
+    else if (i > 0) { cumPath += (i > 1 || !data.current.startsWith('/') ? '/' : '') + part; }
+    if (!part && i === 0) part = '/';
+    html += '<button onclick="loadVideoDir(\'' + esc(cumPath || '/') + '\')">' + esc(part || '/') + '</button>';
+    if (i < parts.length - 1) html += '<span class="sep">/</span>';
+  });
+  breadcrumb.innerHTML = html;
+  let items = '';
+  if (data.parent != null) {
+    items += '<button onclick="loadVideoDir(\'' + esc(data.parent) + '\')" class="dir-item nav-item"><span class="msi">arrow_back</span> ..</button>';
+  }
+  items += '<button onclick="loadVideoDir(\'' + esc(data.home) + '\')" class="dir-item nav-item"><span class="msi">home</span> ' + esc(data.home) + '</button>';
+  data.entries.forEach(d => {
+    items += '<button onclick="selectVideoDir(\'' + esc(d.path) + '\')" class="dir-item"><span class="msi">folder</span> ' + esc(d.name) + '</button>';
+  });
+  list.innerHTML = items;
+}
+
+function selectVideoDir(path) {
+  document.getElementById('setVideoOutdir').value = path;
+  loadVideoDir(path);
+}
 
 function syncSourceGroup(value) {
   const group = document.getElementById('sourceGroup');
@@ -1821,17 +2059,262 @@ function esc(s) {
   return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
 }
 
+function toggleClearBtn(input) {
+  const btnId = input.id === 'keyword' ? 'clearKeyword' : 'clearVideoUrl';
+  const btn = document.getElementById(btnId);
+  if (btn) btn.classList.toggle('hidden', !input.value);
+}
+
 document.getElementById('keyword').addEventListener('keydown', e => {
   if (e.key === 'Enter') doSearch();
 });
 
 loadDownloaded();
+loadVideoFiles();
 syncSourceGroup(getSource());
+switchMode(getMode());  // restore last mode
 
 (function initBg() {
   const bg = document.getElementById('bgLayer');
   if (bg) bg.style.backgroundImage = "url('/static/wallpaper.webp')";
 })();
+
+// ── Video Download ────────────────────────────────────────────────────
+let videoInfo = null;
+
+document.getElementById('videoUrl').addEventListener('keydown', e => {
+  if (e.key === 'Enter') fetchVideoInfo();
+});
+
+function fetchVideoInfo() {
+  const url = document.getElementById('videoUrl').value.trim();
+  if (!url) return;
+
+  // Show loading state
+  document.getElementById('videoInfo').classList.add('hidden');
+  document.getElementById('videoLoading').classList.remove('hidden');
+  document.getElementById('videoUrl').disabled = true;
+
+  const cookie = getVideoCookie();
+  fetch('/api/video/info', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({url, cookie})
+  })
+    .then(r => r.json())
+    .then(info => {
+      if (info.error) throw new Error(info.error);
+      videoInfo = info;
+      renderVideoInfo(info);
+    })
+    .catch(err => showToast(err.message || '获取失败', 'error'))
+    .finally(() => {
+      document.getElementById('videoLoading').classList.add('hidden');
+      document.getElementById('videoUrl').disabled = false;
+    });
+}
+
+function renderVideoInfo(info) {
+  const box = document.getElementById('videoInfo');
+  box.classList.remove('hidden');
+
+  document.getElementById('videoTitle').textContent = info.title || '?';
+  const meta = [];
+  if (info.uploader) meta.push('上传: ' + info.uploader);
+  if (info.is_playlist) {
+    meta.push('合集 ' + (info.playlist_count || '?') + ' 个视频');
+  } else if (info.duration) {
+    const m = Math.floor(info.duration / 60);
+    const s = info.duration % 60;
+    meta.push(m + ':' + String(s).padStart(2, '0'));
+  }
+  document.getElementById('videoMeta').textContent = meta.join('  ·  ');
+
+  if (info.thumbnail) {
+    document.getElementById('videoThumb').innerHTML =
+      `<img src="${info.thumbnail}" referrerpolicy="no-referrer" onerror="this.innerHTML='<span class=&#39;msi&#39; style=&#39;font-size:28px;color:var(--md-on-surface-variant)&#39;>videocam</span>'">`;
+  }
+
+  const sel = document.getElementById('videoQuality');
+  const pq = document.getElementById('videoPlaylistQuality');
+  if (info.is_playlist) {
+    // Playlist: show part selector + quality selector
+    sel.innerHTML = '<option value="">选择分P</option>';
+    (info.playlist_items || []).forEach((item, i) => {
+      sel.innerHTML += `<option value="${esc(item.url || item.id)}">P${i + 1} ${esc(item.title)}</option>`;
+    });
+    sel.style.maxWidth = '200px';
+    pq.classList.remove('hidden');
+  } else {
+    pq.classList.add('hidden');
+    sel.style.maxWidth = '200px';
+    sel.innerHTML = (info.formats || [])
+      .filter(f => f.has_video && f.has_audio)
+      .slice(0, 8)
+      .map(f => {
+        const sizeStr = f.filesize ? '  ' + fmtSize(f.filesize) : '';
+        return `<option value="${esc(f.id)}">${esc(f.resolution)} ${esc(f.ext)}${sizeStr}</option>`;
+      }).join('');
+    if (!sel.innerHTML) {
+      sel.innerHTML = '<option value="best">最佳</option>';
+    }
+    sel.innerHTML += `
+      <option disabled>预设</option>
+      <option value="best">最佳质量</option>
+      <option value="1080">1080p</option>
+      <option value="720">720p</option>
+      <option value="480">480p</option>
+    `;
+  }
+}
+
+function startVideoDownload() {
+  let url = document.getElementById('videoUrl').value.trim();
+  if (!url) return;
+  let quality = document.getElementById('videoQuality').value || 'best';
+  // If this is a playlist and user picked a specific video URL
+  if (quality.startsWith('http')) {
+    url = quality;
+    quality = document.getElementById('videoPlaylistQuality').value || 'best';
+  }
+  const outdir = getVideoOutdir();
+  const cookie = getVideoCookie();
+  showToast('开始下载视频...', 'info');
+
+  fetch('/api/video/download', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({url, quality, outdir, cookie})
+  })
+    .then(r => r.json())
+    .then(data => {
+      if (data.error) throw new Error(data.error);
+      addVideoProgress(data.id, data.title);
+    })
+    .catch(err => showToast(err.message || '下载失败', 'error'));
+}
+
+function addVideoProgress(vid, title) {
+  const list = document.getElementById('videoProgress');
+  const existing = document.getElementById('vp-' + vid);
+  if (existing) return;
+
+  const item = document.createElement('div');
+  item.id = 'vp-' + vid;
+  item.className = 'dl-progress-item fade-in';
+  item.innerHTML = `
+    <div class="dl-header">
+      <div class="dl-icon">
+        <span class="msi spin" style="font-size:18px">progress_activity</span>
+      </div>
+      <div class="dl-info">
+        <div class="dl-title">${esc(title)}</div>
+        <div id="vp-meta-${vid}" class="dl-artist"></div>
+      </div>
+      <span id="vp-pct-${vid}" class="dl-pct">0%</span>
+    </div>
+    <div class="progress-track">
+      <div id="vp-bar-${vid}" class="progress-bar indeterminate" style="width:0%"></div>
+    </div>
+  `;
+  list.prepend(item);
+  pollVideoProgress(vid);
+}
+
+function deleteFile(btn, callback) {
+  const filename = btn.dataset.filename;
+  const outdir = btn.dataset.outdir;
+  if (!confirm('删除 ' + filename + ' ？')) return;
+  fetch('/api/file/delete', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({filename, outdir})
+  })
+    .then(r => r.json())
+    .then(data => {
+      if (data.error) throw new Error(data.error);
+      showToast('已删除: ' + filename, 'info');
+      if (callback) callback();
+    })
+    .catch(err => showToast(err.message, 'error'));
+}
+
+function loadVideoFiles() {
+  const list = document.getElementById('videoFiles');
+  if (!list) return;
+  fetch('/api/video/downloaded?outdir=' + encodeURIComponent(getVideoOutdir()))
+    .then(r => r.json())
+    .then(files => {
+      if (!files.length) { list.innerHTML = ''; return; }
+      list.innerHTML = files.map((f, i) => `
+        <div class="dl-file-item fade-in" style="animation-delay:${i*0.03}s">
+          <div class="dl-file-icon ${f.ext === '.m4a' ? '' : 'music-icon'}">
+            ${f.ext === '.m4a' ? '<span class="msi">audio_file</span>' : '<span class="msi">videocam</span>'}
+          </div>
+          <span class="dl-file-name">${esc(f.name)}</span>
+          <span class="dl-file-size">${fmtSize(f.size)}</span>
+          <a href="/api/video/file/${encodeURIComponent(f.name)}?outdir=${encodeURIComponent(getVideoOutdir())}" class="dl-file-link">
+            <span class="msi">download</span>
+            下载
+          </a>
+          <button data-filename="${esc(f.name)}" data-outdir="${esc(getVideoOutdir())}" onclick="event.preventDefault();deleteFile(this,loadVideoFiles)" class="btn-icon" style="width:32px;height:32px;flex-shrink:0" title="删除">
+            <span class="msi" style="font-size:18px;color:var(--md-on-surface-variant)">delete</span>
+          </button>
+        </div>
+      `).join('');
+    });
+}
+
+function pollVideoProgress(vid) {
+  const interval = setInterval(() => {
+    fetch('/api/video/' + encodeURIComponent(vid) + '/status')
+      .then(r => r.json())
+      .then(s => {
+        const bar = document.getElementById('vp-bar-' + vid);
+        const pct = document.getElementById('vp-pct-' + vid);
+        const meta = document.getElementById('vp-meta-' + vid);
+        const item = document.getElementById('vp-' + vid);
+
+        if (s.status === 'downloading') {
+          if (bar && s.progress > 0 && s.total_bytes > 0) {
+            bar.classList.remove('indeterminate');
+            bar.style.width = s.progress + '%';
+          }
+          if (pct) {
+            if (s.total_bytes > 0) {
+              pct.textContent = s.progress + '%';
+            } else if (s.downloaded_bytes > 0) {
+              pct.textContent = fmtSize(s.downloaded_bytes);
+            }
+          }
+          if (meta && s.speed > 0) {
+            meta.textContent = fmtSize(s.speed) + '/s';
+            if (s.eta > 0) meta.textContent += '  剩余 ' + Math.round(s.eta) + 's';
+          }
+        } else if (s.status === 'done') {
+          clearInterval(interval);
+          if (pct) pct.textContent = 'OK';
+          if (bar) { bar.classList.remove('indeterminate'); bar.style.width = '100%'; }
+          if (meta) {
+            const filename = s.filepath ? s.filepath.split('/').pop() : '';
+            meta.innerHTML = filename ? `<a href="/api/video/file/${encodeURIComponent(filename)}" style="color:var(--md-primary);text-decoration:none;font-weight:500">下载文件</a>` : '';
+          }
+          showToast(s.title + ' 下载完成', 'success');
+          loadVideoFiles();
+          setTimeout(() => {
+            if (item) {
+              item.style.opacity = '0';
+              setTimeout(() => item.remove(), 500);
+            }
+          }, 5000);
+        } else if (s.status === 'error') {
+          clearInterval(interval);
+          if (pct) { pct.textContent = 'X'; pct.style.color = 'var(--md-error)'; }
+          showToast((s.title || '') + ': ' + (s.error || '未知错误'), 'error');
+        }
+      });
+  }, 800);
+}
 </script>
 </body>
 </html>

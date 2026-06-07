@@ -16,11 +16,11 @@
 
 ## 功能
 
-- 🔍 多音源搜索（网易云 / 酷我 / JOOX）
+- 🔍 多音源搜索（网易云 / 酷我 / JOOX / 哔哩哔哩）
 - ▶️ 流媒体试听
 - ⬇️ 在线下载（320kbps / 无损）
 - 🖼️ 封面自动嵌入 MP3 ID3 标签（多音源 fallback）
-- 🌐 Web UI — Flask + Tailwind CSS
+- 🌐 Web UI — Flask + Material Design 3 (vanilla CSS)
 - 📄 CLI 命令行
 
 ## 安装
