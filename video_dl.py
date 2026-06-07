@@ -70,6 +70,55 @@ def _build_opts(extra=None, cookies=None):
     return opts, cookie_file
 
 
+def _get_bilibili_collection(bvid):
+    """Query Bilibili API for ugc_season (合集) metadata.
+
+    Many B站 videos belong to a 合集 (collection) that yt-dlp doesn't expose.
+    Returns None if the video isn't in a collection, or a dict with:
+      title, thumbnail, is_playlist, playlist_count, playlist_items
+    where playlist_items use av{aid} URLs since the API returns aids.
+    """
+    import requests
+    api_url = f"https://api.bilibili.com/x/web-interface/view?bvid={bvid}"
+    try:
+        resp = requests.get(api_url, headers={
+            "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+            "Referer": "https://www.bilibili.com/",
+        }, timeout=10)
+        data = resp.json()
+    except Exception:
+        return None
+
+    ugc = (data.get("data") or {}).get("ugc_season")
+    if not ugc:
+        return None
+
+    items = []
+    for section in ugc.get("sections", []):
+        for ep in section.get("episodes", []):
+            arc = ep.get("arc", {})
+            aid = arc.get("aid")
+            title = arc.get("title") or ep.get("title") or "?"
+            if aid:
+                items.append({
+                    "id": str(aid),
+                    "url": f"https://www.bilibili.com/video/av{aid}/",
+                    "title": title,
+                })
+
+    if not items:
+        return None
+
+    cover = ugc.get("cover", "")
+    return {
+        "title": ugc.get("title", ""),
+        "thumbnail": cover,
+        "is_playlist": True,
+        "playlist_count": len(items),
+        "playlist_items": items,
+    }
+
+
 def get_video_info(url, cookies=None):
     """Extract video metadata using yt-dlp.
 
@@ -126,6 +175,14 @@ def get_video_info(url, cookies=None):
             "playlist_count": playlist_count,
             "playlist_items": items,
         }
+
+    # Not a playlist — check if this is a bilibili single video in a 合集
+    import re
+    m = re.search(r'bilibili\.com/video/([A-Za-z0-9]+)', url)
+    if m:
+        collection = _get_bilibili_collection(m.group(1))
+        if collection:
+            return collection
 
     # Single video: do a full extraction to get formats
     opts2, cookie_file2 = _build_opts(cookies=cookies)
