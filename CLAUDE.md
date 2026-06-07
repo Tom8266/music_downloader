@@ -22,7 +22,7 @@ A music search/stream/download tool using the [GD Studio Music API](https://musi
 ./music_dl.py video download <url> [-q best|1080|720|480|audio] [-o dir]
 ```
 
-No test suite or linter is configured. Both entry points share `setup_logging(level, log_file)` (structured format with timestamps) — pass `--verbose` for DEBUG, `--log-file <path>` for file logging. Dependencies: `requests`, `flask`, `mutagen`, `rich`, `waitress` (see `requirements.txt`).
+No test suite or linter is configured. Both entry points share `setup_logging(level, log_file)` (structured format with timestamps) — pass `--verbose` for DEBUG, `--log-file <path>` for file logging. Dependencies: `requests`, `flask`, `mutagen`, `rich`, `waitress`, `yt-dlp` (see `requirements.txt`).
 
 ## Architecture
 
@@ -30,7 +30,7 @@ No test suite or linter is configured. Both entry points share `setup_logging(le
 
 - `music_dl.py` — the "library": API client functions (`search`, `get_song_url`, `get_lyric`, `get_pic`, `download_file`, `embed_metadata`, `fetch_cover`) plus a CLI (`argparse` subcommands: search, download, lyric, pic, video). The `main()` block at the bottom is the CLI entry point.
 - `webui.py` — Flask app that `from music_dl import ...` all the API client functions. Uses `waitress` in production, Flask's built-in server with `--debug`. Server-renders `templates/index.html` on `/`, everything else is JSON API routes under `/api/`.
-- `video_dl.py` — yt-dlp wrapper: `get_video_info(url)` extracts metadata; `download_video(url, format_id, output_dir, progress_callback)` downloads with progress. `QUALITY_PRESETS` maps friendly names to yt-dlp format strings.
+- `video_dl.py` — yt-dlp wrapper: `get_video_info(url, cookies)` extracts metadata (auto-detects playlists, uses `extract_flat` for speed); `download_video(url, format_id, output_dir, progress_callback, cookies)` downloads with progress. Cookies are written to temp files and passed as yt-dlp `cookiefile`. `QUALITY_PRESETS` maps friendly names (`best`, `1080`, `720`, `480`, `audio`) to yt-dlp format strings. URL tracking parameters are stripped via `_clean_url()`.
 
 **Shared utilities in `music_dl.py`:**
 - `sanitize_filename(name)` — strips `\/:*?"<>|` from filenames
@@ -60,7 +60,18 @@ No test suite or linter is configured. Both entry points share `setup_logging(le
 
 **Cover art:** `fetch_cover()` searches the preferred source first, then falls back to other sources. If the track has a `pic_id` it fetches directly; otherwise it searches by name+artist.
 
-**Settings:** Stored in browser `localStorage` under key `md_settings` (`{br, source, outdir, pic}`). Read by JS helpers (`getBr()`, `getOutdir()`, etc.) and sent as params with each API call. The download directory can also be set via `MUSIC_DOWNLOAD_DIR` env var on the server.
+**Settings:** Music settings stored in browser `localStorage` under key `md_settings` (`{br, source, outdir}`). Video settings under `md_video_settings` (`{outdir, cookie}`). JS helpers: `getBr()`, `getOutdir()`, `getVideoOutdir()`, `getVideoCookie()`. Default values centralized in `const D`. The music download directory can also be set via `MUSIC_DOWNLOAD_DIR` env var on the server. Directory browser is unified — `_browseDir`/`_loadDir`/`_renderDirBrowser` serve both music and video via a `prefix` parameter.
+
+**Frontend architecture:**
+- Mode toggle (`[音乐] [视频]` segmented buttons) — `switchMode()` shows/hides `#musicContent` / `#videoContent`, persists to localStorage `md_mode`.
+- Polling: download progress polls (800ms intervals) are tracked via `_trackInterval()` and cleaned on mode switch by `_clearPollTimers()`.
+- Playlist handling: `renderVideoInfo()` detects `is_playlist` and renders a part selector dropdown instead of quality options. Download uses the selected part URL.
+- Bilibili-specific: cover thumbnails use `referrerpolicy="no-referrer"`, audio streaming goes through `/api/stream` proxy, downloads include `Referer` header.
+
+**Additional API routes:**
+- `/api/stream` → proxies bilibili audio with `Referer` header (avoids 403)
+- `/api/file/delete` (POST) → deletes a downloaded file (with path validation)
+- `/api/video/downloaded` → lists video files in output directory
 
 **Static files:** `static/icon.svg` (favicon), `static/wallpaper.webp` (background). The old `electron/` directory and `package.json`/`package-lock.json` have been removed (see git history).
 
@@ -72,3 +83,6 @@ No test suite or linter is configured. Both entry points share `setup_logging(le
 - No authentication, no database, no session state — all state is ephemeral (in-memory dict + browser localStorage).
 - Shebangs in `music_dl.py` and `webui.py` are hardcoded to `.venv/bin/python3` — they only work inside that venv. Use `./webui.py` directly (executable bit) or `python3 webui.py`.
 - The project uses Python 3.14. `mutagen` can have compatibility issues on bleeding-edge Python — if metadata embedding breaks, check mutagen's Python version support first.
+- Bilibili CDN requires `Referer: https://www.bilibili.com/` header on audio/video requests (returns 403 without it). Both `/api/stream` proxy and `download_file()` pass this header for bilibili source. Images need `referrerpolicy="no-referrer"`.
+- Bilibili `pic_id` in search results is already an image URL (`//i*.hdslb.com/...`). Using `get_pic()` with a BV number returns a fake URL — always use `pic_id` directly (prepending `https:`) for bilibili cover art.
+- yt-dlp's bilibili extractor needs Chrome UA + Referer headers (set in `_build_opts()`). Playlist/collection detection uses `extract_flat` mode (fast) first, then falls back to one-item extraction for cover images.

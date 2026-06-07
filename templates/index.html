@@ -1868,7 +1868,7 @@ function pollDownload(id, name) {
           }, 3000);
         }
       });
-  }, 800);
+  }, 800));
 }
 
 function loadDownloaded() {
@@ -1975,8 +1975,8 @@ function _loadDir(path, prefix) {
 
 function _renderDirBrowser(data, prefix, fnName, selFnName) {
   const p = prefix || '';
-  const breadcrumb = document.getElementById(p + 'DirBreadcrumb');
-  const list = document.getElementById(p + 'DirList');
+  const breadcrumb = document.getElementById(p ? p + 'DirBreadcrumb' : 'dirBreadcrumb');
+  const list = document.getElementById(p ? p + 'DirList' : 'dirList');
   const parts = data.current === '/' ? [''] : data.current.split('/');
   let html = '', cumPath = '';
   parts.forEach((part, i) => {
@@ -2407,7 +2407,7 @@ function pollVideoProgress(vid) {
           showToast((s.title || '') + ': ' + (s.error || '未知错误'), 'error');
         }
       });
-  }, 800);
+  }, 800));
 }
 </script>
 </body>
