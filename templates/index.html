@@ -1106,13 +1106,28 @@ audio::-webkit-media-controls-time-remaining-display {
    Video Info Card
    ═══════════════════════════════════════════════════ */
 .video-info-card {
-  display: flex; align-items: center; gap: 14px;
-  padding: 14px 16px;
+  display: flex; align-items: center; gap: 12px 16px;
+  flex-wrap: wrap;
+  padding: 12px 16px;
   border-radius: var(--shape-md);
-  background: var(--md-elev-1);
+  border: 1px solid var(--md-outline-variant);
+  background: var(--md-surface);
+  position: relative;
+  overflow: hidden;
+}
+.video-info-card::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: transparent;
+  transition: background var(--duration-short2) var(--motion-standard);
+  pointer-events: none;
+}
+.video-info-card:hover::before {
+  background: rgba(208,188,255, var(--state-hover));
 }
 .video-thumb {
-  width: 64px; height: 64px;
+  width: 56px; height: 56px;
   border-radius: var(--shape-sm);
   overflow: hidden; flex-shrink: 0;
   background: var(--md-surface-variant);
@@ -1122,18 +1137,22 @@ audio::-webkit-media-controls-time-remaining-display {
   width: 100%; height: 100%;
   object-fit: cover;
 }
+.video-thumb .msi {
+  font-size: 28px;
+  color: var(--md-on-surface-variant);
+}
 .video-info {
   flex: 1; min-width: 0;
 }
 .video-title {
-  font: 400 15px/22px system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+  font: 400 14px/20px system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
   color: var(--md-on-surface);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  margin-bottom: 2px;
 }
 .video-meta {
   font: 400 12px/16px system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
   color: var(--md-on-surface-variant);
-  margin-top: 2px;
 }
 .video-actions {
   display: flex; align-items: center; gap: 8px; flex-shrink: 0;
@@ -1450,7 +1469,7 @@ audio::-webkit-media-controls-time-remaining-display {
     <div id="videoInfo" class="hidden">
       <div class="video-info-card fade-in">
         <div id="videoThumb" class="video-thumb">
-          <span class="msi" style="font-size:28px;color:var(--md-on-surface-variant)">videocam</span>
+          <span class="msi">videocam</span>
         </div>
         <div class="video-info">
           <div id="videoTitle" class="video-title"></div>
