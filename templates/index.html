@@ -1752,8 +1752,13 @@ function playTrack(id, source, name, artist, picId, cardIdx) {
 
 function togglePlay(id, source, name, artist, picId, cardIdx) {
   const audio = document.getElementById('playerAudio');
-  if (currentPlayingIdx === cardIdx && !audio.paused) {
-    audio.pause();
+  if (currentPlayingIdx === cardIdx) {
+    // Same track: just toggle pause/play without resetting src
+    if (audio.paused) {
+      audio.play().catch(() => {});
+    } else {
+      audio.pause();
+    }
   } else {
     playTrack(id, source, name, artist, picId, cardIdx);
   }
