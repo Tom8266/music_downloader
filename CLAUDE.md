@@ -60,7 +60,7 @@ No test suite or linter is configured. Both entry points share `setup_logging(le
 
 **Cover art:** `fetch_cover()` searches the preferred source first, then falls back to other sources. If the track has a `pic_id` it fetches directly; otherwise it searches by name+artist.
 
-**Settings:** Music settings stored in browser `localStorage` under key `md_settings` (`{br, source, outdir}`). Video settings under `md_video_settings` (`{outdir, cookie}`). JS helpers: `getBr()`, `getOutdir()`, `getVideoOutdir()`, `getVideoCookie()`. Default values centralized in `const D`. The music download directory can also be set via `MUSIC_DOWNLOAD_DIR` env var on the server. Directory browser is unified — `_browseDir`/`_loadDir`/`_renderDirBrowser` serve both music and video via a `prefix` parameter.
+**Settings:** Music settings stored in browser `localStorage` under key `md_settings` (`{br, source, outdir}`). Video settings under `md_video_settings` (`{outdir, cookie}`). JS helpers: `getBr()`, `getOutdir()`, `getVideoOutdir()`, `getVideoCookie()`. Default values centralized in `const D`. The music download directory can also be set via `MUSIC_DOWNLOAD_DIR` env var on the server. Directory browser is unified — `_browseDir`/`_loadDir`/`_renderDirBrowser` serve both music and video via a `prefix` parameter. Prefix must be lowercase (matching HTML element IDs like `videoDirBreadcrumb`); `_loadDir` capitalizes the first letter internally when constructing function names (`loadVideoDir`).
 
 **Frontend architecture:**
 - Mode toggle (`[音乐] [视频]` segmented buttons) — `switchMode()` shows/hides `#musicContent` / `#videoContent`, persists to localStorage `md_mode`.
