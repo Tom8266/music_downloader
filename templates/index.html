@@ -1174,41 +1174,51 @@ audio::-webkit-media-controls-time-remaining-display {
   color: var(--md-on-surface);
 }
 
-/* ── Playlist Checklist ── */
+/* ── Playlist Checklist (MD3 list) ── */
 .playlist-checklist {
   max-height: 240px;
   overflow-y: auto;
   border: 1px solid var(--md-outline-variant);
-  border-radius: var(--shape-sm);
-  padding: 4px;
+  border-radius: var(--shape-md);
   margin-top: 8px;
 }
 .playlist-checklist label {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 7px 10px;
-  border-radius: var(--shape-sm);
+  gap: 12px;
+  padding: 10px 16px;
   cursor: pointer;
-  font: 400 13px/20px system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+  font: 400 14px/20px system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
   color: var(--md-on-surface);
-  transition: background var(--duration-short2) var(--motion-standard);
+  position: relative;
+  overflow: hidden;
 }
-.playlist-checklist label:hover {
-  background: rgba(202,196,208, var(--state-hover));
+.playlist-checklist label::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: transparent;
+  transition: background var(--duration-short2) var(--motion-standard);
+  pointer-events: none;
+}
+.playlist-checklist label:hover::before {
+  background: rgba(208,188,255, var(--state-hover));
 }
 .playlist-checklist input[type="checkbox"] {
   accent-color: var(--md-primary);
-  width: 16px; height: 16px;
+  width: 18px; height: 18px;
   flex-shrink: 0;
   cursor: pointer;
 }
 .playlist-select-all {
   border-bottom: 1px solid var(--md-outline-variant);
+  padding-bottom: 8px;
   margin-bottom: 4px;
-  padding-bottom: 8px !important;
   font-weight: 500;
-  color: var(--md-primary) !important;
+  color: var(--md-primary);
+}
+.playlist-select-all:hover::before {
+  background: rgba(208,188,255, var(--state-hover));
 }
 
 /* ── Input Clear Button ── */
