@@ -123,6 +123,7 @@ def _get_bilibili_bangumi_season(season_id):
     """Query Bilibili PGC API for full season episode list.
 
     Handles bangumi/episode URLs (e.g. /bangumi/play/ep779777).
+    Filters to main-section episodes only (section_type == 0).
     Returns collection-format dict or None.
     """
     import requests
@@ -143,18 +144,16 @@ def _get_bilibili_bangumi_season(season_id):
 
     items = []
     for ep in episodes:
+        # section_type 0 = main episodes, 1 = previews/extras — skip non-main
+        if ep.get("section_type") != 0:
+            continue
         link = ep.get("link") or ep.get("share_url") or ""
-        title = ep.get("title") or ep.get("long_title") or "?"
-        # Prepend episode number for clarity
-        ep_num = ep.get("title") or ""
-        if ep_num:
-            label = f"{ep_num} {ep.get('long_title', '')}"
-        else:
-            label = title
+        # long_title has the real episode name; title is just the number
+        ep_title = ep.get("long_title") or ep.get("title") or "?"
         items.append({
             "id": str(ep.get("id") or ep.get("aid", "")),
             "url": link,
-            "title": label.strip(),
+            "title": ep_title,
         })
 
     if not items:
@@ -178,6 +177,8 @@ def get_video_info(url, cookies=None):
 
     Returns dict with: title, thumbnail, duration, uploader, formats
     """
+    import re
+
     url = _clean_url(url)
     opts, cookie_file = _build_opts(cookies=cookies)
     # Use extract_flat for fast playlist handling
@@ -216,6 +217,24 @@ def get_video_info(url, cookies=None):
                     os.unlink(cover_cf)
             except Exception:
                 pass
+        # If titles are all placeholder "Part N", try to enrich from PGC API
+        # (yt-dlp extract_flat doesn't return episode titles for bangumi seasons)
+        if items and all(
+            t["title"] == f"Part {i + 1}" for i, t in enumerate(items)
+        ):
+            m = re.search(r'bilibili\.com/bangumi/play/ss(\d+)', url)
+            if m:
+                season = _get_bilibili_bangumi_season(m.group(1))
+                if season:
+                    title_map = {}
+                    for ep in season["playlist_items"]:
+                        title_map[ep["id"]] = ep["title"]
+                    for item in items:
+                        if item["id"] in title_map:
+                            item["title"] = title_map[item["id"]]
+                    playlist_count = season["playlist_count"]
+                    if not thumbnail:
+                        thumbnail = season.get("thumbnail", "")
         return {
             "title": info.get("title", ""),
             "thumbnail": thumbnail,
@@ -227,7 +246,6 @@ def get_video_info(url, cookies=None):
         }
 
     # Not a yt-dlp playlist — check if this is a bilibili video with a wider collection
-    import re
     # 1) UGC 合集 (single /video/BVxxx that belongs to a user collection)
     m = re.search(r'bilibili\.com/video/([A-Za-z0-9]+)', url)
     if m:
