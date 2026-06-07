@@ -1126,12 +1126,12 @@ audio::-webkit-media-controls-time-remaining-display {
   flex: 1; min-width: 0;
 }
 .video-title {
-  font: 400 15px/22px 'Roboto', sans-serif;
+  font: 400 15px/22px system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
   color: var(--md-on-surface);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .video-meta {
-  font: 400 12px/16px 'Roboto', sans-serif;
+  font: 400 12px/16px system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
   color: var(--md-on-surface-variant);
   margin-top: 2px;
 }
@@ -1144,7 +1144,7 @@ audio::-webkit-media-controls-time-remaining-display {
   border-radius: var(--shape-xs);
   background: transparent;
   color: var(--md-on-surface);
-  font: 400 13px/20px 'Roboto', sans-serif;
+  font: 400 13px/20px system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
   appearance: none;
   cursor: pointer;
   max-width: 200px;
@@ -1208,10 +1208,10 @@ audio::-webkit-media-controls-time-remaining-display {
 .input-clear-btn .msi { font-size: 18px; }
 
 /* ── Delete Icon Button ── */
-.btn-delete {
+.btn-file-action {
   width: 32px; height: 32px; flex-shrink: 0;
 }
-.btn-delete .msi {
+.btn-file-action .msi {
   font-size: 18px;
   color: var(--md-on-surface-variant);
 }
@@ -1223,7 +1223,7 @@ audio::-webkit-media-controls-time-remaining-display {
   border-radius: var(--shape-xs);
   background: transparent;
   color: var(--md-on-surface);
-  font: 400 12px/18px 'Roboto', sans-serif;
+  font: 400 12px/18px system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
   resize: vertical; outline: none;
 }
 
@@ -1953,10 +1953,10 @@ function loadDownloaded() {
             <span class="msi">download</span>
             下载
           </a>
-          <button data-filename="${esc(f.name)}" data-outdir="${esc(getOutdir())}" onclick="event.preventDefault();hideFile(this,loadDownloaded)" class="btn-icon btn-delete" title="隐藏">
+          <button data-filename="${esc(f.name)}" data-outdir="${esc(getOutdir())}" onclick="event.preventDefault();hideFile(this,loadDownloaded)" class="btn-icon btn-file-action" title="隐藏">
             <span class="msi">visibility_off</span>
           </button>
-          <button data-filename="${esc(f.name)}" data-outdir="${esc(getOutdir())}" onclick="event.preventDefault();deleteFile(this,loadDownloaded)" class="btn-icon btn-delete" title="删除">
+          <button data-filename="${esc(f.name)}" data-outdir="${esc(getOutdir())}" onclick="event.preventDefault();deleteFile(this,loadDownloaded)" class="btn-icon btn-file-action" title="删除">
             <span class="msi">delete</span>
           </button>
         </div>
@@ -2482,10 +2482,10 @@ function loadVideoFiles() {
             <span class="msi">download</span>
             下载
           </a>
-          <button data-filename="${esc(f.name)}" data-outdir="${esc(getVideoOutdir())}" onclick="event.preventDefault();hideFile(this,loadVideoFiles)" class="btn-icon btn-delete" title="隐藏">
+          <button data-filename="${esc(f.name)}" data-outdir="${esc(getVideoOutdir())}" onclick="event.preventDefault();hideFile(this,loadVideoFiles)" class="btn-icon btn-file-action" title="隐藏">
             <span class="msi">visibility_off</span>
           </button>
-          <button data-api="/api/video/file/delete" data-filename="${esc(f.name)}" data-outdir="${esc(getVideoOutdir())}" onclick="event.preventDefault();deleteFile(this,loadVideoFiles)" class="btn-icon btn-delete" title="删除">
+          <button data-api="/api/video/file/delete" data-filename="${esc(f.name)}" data-outdir="${esc(getVideoOutdir())}" onclick="event.preventDefault();deleteFile(this,loadVideoFiles)" class="btn-icon btn-file-action" title="删除">
             <span class="msi">delete</span>
           </button>
         </div>
