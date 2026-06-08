@@ -324,9 +324,9 @@ _BILI_QN_OPTIONS = {
     120: ("4K",        "bestvideo[height<=2160]+bestaudio/best[height<=2160]"),
     116: ("1080P60",   "bestvideo[height<=1080]+bestaudio/best[height<=1080]"),
     112: ("1080P+",    "bestvideo[height<=1080]+bestaudio/best[height<=1080]"),
-    80:  ("1080P",     "bestvideo[height<=1080]+bestaudio/best[height<=1080]"),
+    80:  ("1080P",     "bestvideo[height<=1080][quality<=80]+bestaudio/best[height<=1080]"),
     74:  ("720P60",    "bestvideo[height<=720]+bestaudio/best[height<=720]"),
-    64:  ("720P",      "bestvideo[height<=720]+bestaudio/best[height<=720]"),
+    64:  ("720P",      "bestvideo[height<=720][quality<=64]+bestaudio/best[height<=720]"),
     32:  ("480P",      "bestvideo[height<=480]+bestaudio/best[height<=480]"),
     16:  ("360P",      "bestvideo[height<=360]+bestaudio/best[height<=360]"),
 }
