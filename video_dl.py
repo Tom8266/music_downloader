@@ -5,6 +5,7 @@ import os
 import tempfile
 import time
 
+import requests
 import yt_dlp
 
 logger = logging.getLogger("video_dl")
@@ -18,11 +19,15 @@ QUALITY_PRESETS = {
     "audio": "bestaudio/best",
 }
 
-# Bilibili audio extraction headers (shared with _build_opts)
-_BILI_HEADERS = {
+# Bilibili request headers — shared across modules
+BILI_HEADERS = {
     "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
     "Referer": "https://www.bilibili.com/",
 }
+
+# Shared session for B站 API calls (avoids repeated TCP+TLS handshakes)
+_bili_session = requests.Session()
+_bili_session.headers.update(BILI_HEADERS)
 
 
 def _make_cookiefile(cookies):
@@ -36,21 +41,86 @@ def _make_cookiefile(cookies):
 
 
 def _clean_url(url):
-    """Strip tracking parameters that can confuse yt-dlp."""
+    """Strip tracking parameters that can confuse yt-dlp.
+
+    Removes Bilibili tracking/analytics query params while preserving
+    functional params like ``p`` (page), ``t`` (timestamp), and ``q``.
+    """
     import re
-    # Remove common tracking params from B站 URLs
     TRACK_PARAMS = (
         "spm_id_from|vd_source|share_source|share_medium|share_plat|"
         "share_session_id|share_tag|timestamp|unique_k|up_id|from_source|"
-        "from_spmid|plat_id|session_id|trackid"
+        "from_spmid|plat_id|session_id|trackid|"
+        "broadcast_type|share_from|ugc_share|search_group|source_type|"
+        "csr|refer_source|refer_plat|refer_session_id|from"
     )
+    # Remove each tracking param: [?&]key=value  (value is everything up to the next & or end)
     url = re.sub(rf'[?&]({TRACK_PARAMS})=[^&]*', '', url)
-    # Fix edge case: if the first tracked param after ? was removed but
-    # untracked ones remain, the URL may have & as the first separator.
+    # Fix edge case: if the only remaining params were all tracking, we're left
+    # with a dangling '?' — strip it.  If the first remaining param now has a
+    # leading '&', convert it to '?' so the URL stays well-formed.
     # e.g. /video/BV123/&legit_param=1 → /video/BV123/?legit_param=1
     if '&' in url and '?' not in url:
         url = url.replace('&', '?', 1)
     return url.rstrip('?')
+
+
+def _extract_bvid(url_or_id):
+    """Extract a BV/AV id from a Bilibili URL or yt-dlp entry id.
+
+    Handles:
+        https://www.bilibili.com/video/BV1xx411c7mD/
+        https://www.bilibili.com/video/av123456/
+        https://m.bilibili.com/video/BV1xx411c7mD/
+        BV1xx411c7mD  (bare id)
+    Returns the id string (BV... or av...) or None.
+    """
+    import re
+    # Already a bare BV/AV id?
+    if re.match(r'^(BV[A-Za-z0-9]+|av\d+)$', url_or_id):
+        return url_or_id
+    # Extract from full URL
+    m = re.search(r'bilibili\.com/video/([A-Za-z0-9]+)', url_or_id)
+    return m.group(1) if m else None
+
+
+def _extract_season_id(url_or_info):
+    """Extract a Bilibili season/ss id from a URL or yt-dlp info dict.
+
+    Accepts a string URL or a dict (yt-dlp info).
+    Returns the season id as int, or None.
+
+    Only matches ``ss`` (season) patterns — NOT ``ep`` (episode) patterns,
+    since those are episode ids, not season ids.  For episode URLs, use
+    yt-dlp's ``season_id`` field (passed via info dict) instead.
+    """
+    import re
+    if isinstance(url_or_info, dict):
+        sid = url_or_info.get("season_id")
+        if sid:
+            return int(sid)
+        # Try to get it from the webpage_url
+        url_or_info = url_or_info.get("webpage_url", "")
+    # String: only match ss(\d+) — ep(\d+) is an episode id, not a season id
+    for pat in (r'bilibili\.com/bangumi/play/ss(\d+)',
+                r'bilibili\.com/cheese/play/ss(\d+)'):
+        m = re.search(pat, url_or_info)
+        if m:
+            return int(m.group(1))
+    return None
+
+
+def _is_bilibili(info_or_url):
+    """Check if a yt-dlp info dict or URL is from Bilibili.
+
+    Uses extractor_key for accuracy when available; falls back to domain check.
+    """
+    if isinstance(info_or_url, dict):
+        extractor = (info_or_url.get("extractor_key") or "").lower()
+        if extractor:
+            return extractor.startswith("bili")
+        info_or_url = info_or_url.get("webpage_url", "")
+    return "bilibili.com" in info_or_url or "b23.tv" in info_or_url
 
 
 def _build_opts(extra=None, cookies=None):
@@ -63,10 +133,7 @@ def _build_opts(extra=None, cookies=None):
         "fragment_retries": 3,
         "extractor_retries": 3,
         "playlist_items": "1:200",  # 合集最多取前200个
-        "http_headers": {
-            "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
-            "Referer": "https://www.bilibili.com/",
-        },
+        "http_headers": dict(BILI_HEADERS),
     }
     if extra:
         opts.update(extra)
@@ -123,13 +190,13 @@ def extract_audio_url(track_id, cookies=None):
 
 def _bilibili_view_api(bvid):
     """Call B站 /x/web-interface/view for a given BV id. Returns data dict or None."""
-    import requests
     try:
-        resp = requests.get(
+        resp = _bili_session.get(
             f"https://api.bilibili.com/x/web-interface/view?bvid={bvid}",
-            headers=_BILI_HEADERS, timeout=10)
+            timeout=10)
         return (resp.json().get("data") or {}) if resp.ok else None
-    except Exception:
+    except requests.RequestException:
+        logger.debug("B站 view API 请求失败: bvid=%s", bvid, exc_info=True)
         return None
 
 
@@ -174,13 +241,13 @@ def _get_bilibili_bangumi_season(season_id):
     Filters to main-section episodes only (section_type == 0).
     Returns collection-format dict or None.
     """
-    import requests
     try:
-        resp = requests.get(
+        resp = _bili_session.get(
             f"https://api.bilibili.com/pgc/view/web/season?season_id={season_id}",
-            headers=_BILI_HEADERS, timeout=10)
+            timeout=10)
         data = resp.json()
-    except Exception:
+    except requests.RequestException:
+        logger.debug("B站 PGC API 请求失败: season_id=%s", season_id, exc_info=True)
         return None
 
     result = data.get("result") or {}
@@ -242,11 +309,83 @@ def _enrich_multipart_titles(bvid, items):
     return items if changed else None
 
 
+# ── Bilibili quality name → yt-dlp format selector ────────────────────
+# Used to build quality options that show ALL available tiers (杜比/4K/1080P…)
+# even when the user is not logged in.  The format selectors auto-adapt:
+# with cookies they pick the real tier; without, they fall back to the best
+# accessible stream.
+#
+# Format: {quality_number: (display_label, format_selector)}
+# Quality numbers lower than 32 are omitted (no one wants <360P).
+_BILI_QN_OPTIONS = {
+    127: ("8K",        "bestvideo[height<=4320]+bestaudio/best[height<=4320]"),
+    126: ("杜比视界",  "bestvideo+bestaudio/best"),
+    125: ("HDR",       "bestvideo+bestaudio/best"),
+    120: ("4K",        "bestvideo[height<=2160]+bestaudio/best[height<=2160]"),
+    116: ("1080P60",   "bestvideo[height<=1080]+bestaudio/best[height<=1080]"),
+    112: ("1080P+",    "bestvideo[height<=1080]+bestaudio/best[height<=1080]"),
+    80:  ("1080P",     "bestvideo[height<=1080]+bestaudio/best[height<=1080]"),
+    74:  ("720P60",    "bestvideo[height<=720]+bestaudio/best[height<=720]"),
+    64:  ("720P",      "bestvideo[height<=720]+bestaudio/best[height<=720]"),
+    32:  ("480P",      "bestvideo[height<=480]+bestaudio/best[height<=480]"),
+    16:  ("360P",      "bestvideo[height<=360]+bestaudio/best[height<=360]"),
+}
+
+
+def _bilibili_get_qualities(bvid):
+    """Query B站 PlayURL API for the list of available quality tiers.
+
+    Returns a list of (label, format_selector) tuples sorted highest-first,
+    or an empty list on failure.
+    """
+    # First get cid from view API
+    data = _bilibili_view_api(bvid)
+    if not data:
+        return []
+    cid = data.get("cid")
+    if not cid:
+        # Try first page's cid
+        pages = data.get("pages") or []
+        cid = pages[0].get("cid") if pages else None
+    if not cid:
+        return []
+
+    try:
+        resp = _bili_session.get(
+            "https://api.bilibili.com/x/player/playurl",
+            params={"bvid": bvid, "cid": cid, "qn": "127", "fnval": "4048", "fourk": "1"},
+            timeout=10,
+        )
+        pdata = (resp.json().get("data") or {}) if resp.ok else {}
+    except requests.RequestException:
+        logger.debug("B站 PlayURL API 请求失败", exc_info=True)
+        return []
+
+    accept_quality = pdata.get("accept_quality") or []
+    if not accept_quality:
+        return []
+
+    # accept_quality is sorted highest-first by B站; deduplicate labels
+    options = []
+    seen_labels = set()
+    for qn in accept_quality:
+        entry = _BILI_QN_OPTIONS.get(qn)
+        if not entry:
+            continue
+        label, selector = entry
+        if label in seen_labels:
+            continue
+        seen_labels.add(label)
+        options.append((label, selector))
+
+    return options
+
+
 def get_video_info(url, cookies=None):
     """Extract video metadata using yt-dlp.
 
     Args:
-        url: Video URL.
+        url: Video URL (any format yt-dlp supports, including b23.tv short links).
         cookies: Optional Netscape-format cookie string.
 
     Returns dict with: title, thumbnail, duration, uploader, formats
@@ -265,7 +404,13 @@ def get_video_info(url, cookies=None):
         if cookie_file:
             os.unlink(cookie_file)
 
-    # If playlist/collection, return flat summary with URLs
+    # Use yt-dlp's resolved URL for subsequent matching.
+    # This handles b23.tv short links, mobile redirects, etc. — the final
+    # URL will be the canonical bilibili.com form.
+    resolved_url = info.get("webpage_url", url)
+    is_bili = _is_bilibili(info)
+
+    # ── Playlist / collection ──────────────────────────────────────────
     entries = info.get("entries")
     if entries:
         playlist_count = info.get("playlist_count") or info.get("n_entries") or len(entries)
@@ -282,6 +427,7 @@ def get_video_info(url, cookies=None):
         # Quick extraction of first video to get cover image
         thumbnail = info.get("thumbnail", "")
         if not thumbnail and items:
+            cover_cf = None
             try:
                 cover_opts, cover_cf = _build_opts(cookies=cookies)
                 cover_opts["playlist_items"] = "1:1"
@@ -289,18 +435,23 @@ def get_video_info(url, cookies=None):
                     cover_info = ydl.extract_info(url, download=False)
                 first_entry = (cover_info.get("entries") or [{}])[0]
                 thumbnail = first_entry.get("thumbnail", "")
+            except Exception:
+                logger.debug("封面提取失败，跳过", exc_info=True)
+            finally:
                 if cover_cf:
                     os.unlink(cover_cf)
-            except Exception:
-                pass
-        # If titles are all placeholder "Part N", try to enrich from PGC API
-        # (yt-dlp extract_flat doesn't return episode titles for bangumi seasons)
-        if items and all(
+
+        # If titles are all placeholder "Part N", try to enrich from Bilibili APIs
+        # (yt-dlp extract_flat doesn't return real episode titles)
+        if is_bili and items and all(
             t["title"] == f"Part {i + 1}" for i, t in enumerate(items)
         ):
-            m = re.search(r'bilibili\.com/bangumi/play/ss(\d+)', url)
-            if m:
-                season = _get_bilibili_bangumi_season(m.group(1))
+            # 1) Bangumi / PGC season — prefer season_id from yt-dlp, fall back to URL regex
+            season_id = _extract_season_id(info)
+            if not season_id:
+                season_id = _extract_season_id(resolved_url)
+            if season_id:
+                season = _get_bilibili_bangumi_season(season_id)
                 if season:
                     title_map = {}
                     for ep in season["playlist_items"]:
@@ -312,31 +463,36 @@ def get_video_info(url, cookies=None):
                     playlist_count = season["playlist_count"]
                     if not thumbnail:
                         thumbnail = season.get("thumbnail", "")
-            # Also try B站 multi-part video API for real page titles
-            m2 = re.search(r'bilibili\.com/video/([A-Za-z0-9]+)', url)
-            if m2:
-                enriched = _enrich_multipart_titles(m2.group(1), items)
+
+            # 2) B站 multi-part video — try BVID from both info dict and resolved URL
+            bvid = _extract_bvid(info.get("id", "")) or _extract_bvid(resolved_url)
+            if bvid:
+                enriched = _enrich_multipart_titles(bvid, items)
                 if enriched:
                     items = enriched
+
         return {
             "title": info.get("title", ""),
             "thumbnail": thumbnail,
             "uploader": info.get("uploader", ""),
-            "webpage_url": info.get("webpage_url", url),
+            "webpage_url": resolved_url,
             "is_playlist": True,
             "playlist_count": playlist_count,
             "playlist_items": items,
         }
 
-    # Not a yt-dlp playlist — check if this is a bilibili video with a wider collection
-    # 1) UGC 合集 (single /video/BVxxx that belongs to a user collection)
-    m = re.search(r'bilibili\.com/video/([A-Za-z0-9]+)', url)
-    if m:
-        collection = _get_bilibili_collection(m.group(1))
-        if collection:
-            return collection
+    # ── Single video ───────────────────────────────────────────────────
+    # Check if this Bilibili video belongs to a wider collection / season
 
-    # 2) Bangumi / PGC season (single episode URL e.g. /bangumi/play/ep779777)
+    if is_bili:
+        # 1) UGC 合集 — need BVID from resolved URL or yt-dlp id
+        bvid = _extract_bvid(resolved_url) or _extract_bvid(info.get("id", ""))
+        if bvid:
+            collection = _get_bilibili_collection(bvid)
+            if collection:
+                return collection
+
+    # 2) Bangumi / PGC season — use season_id from yt-dlp (works for any URL format)
     sid = info.get("season_id")
     if sid:
         collection = _get_bilibili_bangumi_season(sid)
@@ -352,58 +508,123 @@ def get_video_info(url, cookies=None):
         if cookie_file2:
             os.unlink(cookie_file2)
 
-    # Filter to useful formats (skip storyboards, mhtml, etc.)
-    formats = []
-    for f in info.get("formats", []):
-        fid = f.get("format_id", "")
-        ext = f.get("ext", "?")
-        res = f.get("resolution") or f.get("format_note") or (
-            f"{f.get('width', '?')}x{f.get('height', '?')}" if f.get("height") else None
-        ) or "?"
-        filesize = f.get("filesize") or f.get("filesize_approx") or 0
+    # ── Build quality options ──────────────────────────────────────────
+    # Strategy: group by resolution, showing the best format per height.
+    # For DASH sources (Bilibili — video + audio are separate streams) we
+    # build yt-dlp format strings that auto-merge.  For combined sources
+    # (YouTube) we use the actual format ids directly.
+    raw = info.get("formats", [])
+
+    # Classify formats
+    combined_fmts = []        # has both video and audio
+    video_by_height = {}      # height -> best video-only format
+    audio_fmts = []           # audio-only formats
+
+    for f in raw:
         vcodec = f.get("vcodec", "none")
         acodec = f.get("acodec", "none")
-        is_video = vcodec and vcodec != "none"
-        is_audio = acodec and acodec != "none"
+        ext = f.get("ext", "")
+        has_v = vcodec and vcodec != "none"
+        has_a = acodec and acodec != "none"
 
+        # Skip non-playable
         if "storyboard" in (f.get("format_note") or "").lower():
             continue
         if ext == "mhtml":
             continue
 
+        if has_v and has_a:
+            combined_fmts.append(f)
+        elif has_v:
+            height = f.get("height") or 0
+            if not height:
+                continue
+            cur_best = video_by_height.get(height)
+            if cur_best is None or (f.get("tbr") or 0) > (cur_best.get("tbr") or 0):
+                video_by_height[height] = f
+        elif has_a:
+            audio_fmts.append(f)
+
+    formats = []
+
+    if combined_fmts:
+        # Non-DASH source (YouTube etc.): use actual format ids
+        seen_heights = set()
+        for f in sorted(combined_fmts, key=lambda x: x.get("height") or 0, reverse=True):
+            height = f.get("height") or 0
+            if height in seen_heights:
+                continue
+            seen_heights.add(height)
+            res = f.get("resolution") or f"{height}p"
+            formats.append({
+                "id": f.get("format_id", ""),
+                "ext": f.get("ext", "mp4"),
+                "resolution": str(res),
+                "filesize": f.get("filesize") or f.get("filesize_approx") or 0,
+                "has_video": True,
+                "has_audio": True,
+                "tbr": f.get("tbr") or 0,
+            })
+        # Also add any DASH video resolutions we missed
+        for height in sorted(video_by_height, reverse=True):
+            if height in seen_heights:
+                continue
+            f = video_by_height[height]
+            formats.append({
+                "id": f"bestvideo[height<={height}]+bestaudio/best[height<={height}]",
+                "ext": f.get("ext", "mp4"),
+                "resolution": f"{height}p",
+                "filesize": 0,
+                "has_video": True,
+                "has_audio": True,
+                "tbr": f.get("tbr") or 0,
+            })
+    else:
+        # DASH-only source
+        if is_bili:
+            # Bilibili: query PlayURL API for the real quality tier list.
+            # Even without cookies the API reports ALL tiers (杜比/4K/1080P+…);
+            # the format selectors auto-adapt to what's actually accessible.
+            bvid = _extract_bvid(resolved_url) or _extract_bvid(info.get("id", ""))
+            if bvid:
+                quality_list = _bilibili_get_qualities(bvid)
+                if quality_list:
+                    for label, selector in quality_list:
+                        formats.append({
+                            "id": selector,
+                            "ext": "mp4",
+                            "resolution": label,
+                            "filesize": 0,
+                            "has_video": True,
+                            "has_audio": True,
+                            "tbr": 0,
+                        })
+        if not formats:
+            # Fallback: build from actually-available DASH heights
+            for height in sorted(video_by_height, reverse=True):
+                f = video_by_height[height]
+                formats.append({
+                    "id": f"bestvideo[height<={height}]+bestaudio/best[height<={height}]",
+                    "ext": f.get("ext", "mp4"),
+                    "resolution": f"{height}p",
+                    "filesize": f.get("filesize") or f.get("filesize_approx") or 0,
+                    "has_video": True,
+                    "has_audio": True,
+                    "tbr": f.get("tbr") or 0,
+                })
+
+    # Audio-only option
+    if audio_fmts:
+        best_audio = max(audio_fmts, key=lambda x: x.get("tbr") or 0)
         formats.append({
-            "id": fid,
-            "ext": ext,
-            "resolution": str(res),
-            "filesize": filesize,
-            "has_video": is_video,
-            "has_audio": is_audio,
-            "tbr": f.get("tbr") or 0,  # total bitrate
+            "id": "bestaudio/best",
+            "ext": best_audio.get("ext", "m4a"),
+            "resolution": "audio only",
+            "filesize": 0,
+            "has_video": False,
+            "has_audio": True,
+            "tbr": best_audio.get("tbr") or 0,
         })
-
-    # Sort: video+audio formats first, then by quality descending
-    def _sort_key(f):
-        score = 0
-        if f["has_video"] and f["has_audio"]:
-            score += 1000
-        elif f["has_video"]:
-            score += 500
-        elif f["has_audio"]:
-            score += 200
-        score += int(f.get("tbr", 0) or 0)
-        return -score
-
-    formats.sort(key=_sort_key)
-
-    # Deduplicate by resolution+ext (keep first/best)
-    seen = set()
-    unique = []
-    for f in formats:
-        key = (f["resolution"], f["ext"])
-        if key in seen:
-            continue
-        seen.add(key)
-        unique.append(f)
 
     return {
         "title": info.get("title", ""),
@@ -411,7 +632,7 @@ def get_video_info(url, cookies=None):
         "duration": info.get("duration") or 0,
         "uploader": info.get("uploader", ""),
         "webpage_url": info.get("webpage_url", url),
-        "formats": unique,
+        "formats": formats,
     }
 
 
@@ -479,7 +700,7 @@ def download_video(url, format_id="best", output_dir=None, progress_callback=Non
             os.unlink(cookie_file)
 
     # Clean up yt-dlp intermediate files left behind after merging
-    _cleanup_intermediate_files(output_dir, filepath)
+    filepath = _cleanup_intermediate_files(output_dir, filepath)
 
     elapsed = time.time() - t0
     if filepath and os.path.isfile(filepath):
@@ -496,18 +717,22 @@ def _cleanup_intermediate_files(output_dir, final_filepath):
     When yt-dlp downloads bestvideo+bestaudio separately and merges via
     ffmpeg, it sometimes leaves behind .f{id}.mp4 / .f{id}.m4a fragments
     and stuck .temp.mp4 files.  Clean them up so only the final file remains.
+
+    Returns:
+        Corrected filepath if a .temp.mp4 was renamed, else the original.
     """
     import glob, re
+    corrected = final_filepath
     if not output_dir or not os.path.isdir(output_dir):
-        return
+        return corrected
     # Recover .temp.mp4 → .mp4 (yt-dlp sometimes gets stuck with temp name)
     for f in glob.glob(os.path.join(output_dir, "*.temp.mp4")):
         final = f.replace(".temp.mp4", ".mp4")
         if not os.path.exists(final):
             try:
                 os.rename(f, final)
-                if final_filepath and f.endswith(os.path.basename(final_filepath or "") + ".temp.mp4"):
-                    pass  # actual filepath was the temp; it's now renamed
+                if final_filepath and os.path.basename(f) == os.path.basename(final_filepath or ""):
+                    corrected = final  # update returned path to the renamed file
             except OSError:
                 pass
     # Delete orphaned intermediate stream fragments
@@ -518,3 +743,4 @@ def _cleanup_intermediate_files(output_dir, final_filepath):
                 logger.debug("已清理中间文件: %s", os.path.basename(f))
             except OSError:
                 pass
+    return corrected
