@@ -245,24 +245,28 @@ def api_download():
     if not track_id:
         return jsonify({"error": "缺少曲目 ID"}), 400
 
-    try:
-        result = get_song_url(track_id, source, br)
-        url = result.get("url")
-        if not url:
-            logger.error("下载请求: 未获取到链接 id=%s", track_id)
-            return jsonify({"error": "未获取到下载链接", "detail": result}), 400
-    except Exception as e:
-        logger.exception("下载请求失败: id=%s", track_id)
-        return jsonify({"error": str(e)}), 500
+    if source == "bilibili":
+        # B站不走 GD API，直接 yt-dlp 提取音频
+        url = None
+        ext = ".m4a"
+    else:
+        try:
+            result = get_song_url(track_id, source, br)
+            url = result.get("url")
+            if not url:
+                logger.error("下载请求: 未获取到链接 id=%s", track_id)
+                return jsonify({"error": "未获取到下载链接", "detail": result}), 400
+        except Exception as e:
+            logger.exception("下载请求失败: id=%s", track_id)
+            return jsonify({"error": str(e)}), 500
+        ext = ".mp3"
+        if "flac" in url.lower():
+            ext = ".flac"
+        elif "m4a" in url.lower() or "m4s" in url.lower():
+            ext = ".m4a"
 
     artist_str = format_artist_str(artists)
     filename_suffix = f" - {artist_str}" if artist_str else ""
-
-    ext = ".mp3"
-    if "flac" in url.lower():
-        ext = ".flac"
-    elif "m4a" in url.lower() or "m4s" in url.lower():
-        ext = ".m4a"
 
     outdir = resolve_outdir(data.get("outdir", ""))
     os.makedirs(outdir, exist_ok=True)
@@ -286,9 +290,8 @@ def api_download():
             "progress": 0,
             "downloaded_bytes": initial_bytes,
             "total_bytes": 0,
-            "resumed": initial_bytes,
-            "size": result.get("size", 0),
-            "br": result.get("br", "?"),
+            "size": result.get("size", 0) if not source == "bilibili" else 0,
+            "br": result.get("br", "?") if not source == "bilibili" else "?",
             "filepath": filepath,
         }
 
@@ -305,7 +308,6 @@ def api_download():
                         return
                     last_pct[0] = pct
                 else:
-                    # CDN 未返回文件大小，每 100KB 更新一次字节数
                     if downloaded - last_bytes[0] < 102400:
                         return
                     last_bytes[0] = downloaded
@@ -317,10 +319,35 @@ def api_download():
                         downloads_status[track_id]["progress"] = pct
                         downloads_status[track_id]["downloaded_bytes"] = downloaded
                         downloads_status[track_id]["total_bytes"] = total
-                        downloads_status[track_id]["resumed"] = resumed
+
+            dl_url = url
+            if source == "bilibili":
+                import yt_dlp
+                bili_url = f"https://www.bilibili.com/video/{track_id}/"
+                ydl_opts = {
+                    "quiet": True, "no_warnings": True,
+                    "format": "bestaudio/best",
+                    "http_headers": {"User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36", "Referer": "https://www.bilibili.com/"},
+                }
+                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                    info = ydl.extract_info(bili_url, download=False)
+                audio_url = None
+                for fmt in info.get("formats", []):
+                    if fmt.get("acodec") != "none" and fmt.get("vcodec") == "none":
+                        audio_url = fmt.get("url")
+                        break
+                if not audio_url:
+                    for fmt in info.get("formats", []):
+                        if fmt.get("acodec") != "none":
+                            audio_url = fmt.get("url")
+                            break
+                if not audio_url:
+                    raise Exception("未找到 B站音频流")
+                dl_url = audio_url
+                logger.info("yt-dlp 音频提取成功: %s", info.get("title", "")[:50])
 
             dl_headers = {"Referer": "https://www.bilibili.com/", "User-Agent": "Mozilla/5.0"} if source == "bilibili" else None
-            download_file(url, filepath, progress_callback=on_progress, extra_headers=dl_headers)
+            download_file(dl_url, filepath, progress_callback=on_progress, extra_headers=dl_headers)
 
             pic_data = _download_cover(pic_id, name, artists, source)
             _embed_track_metadata(filepath, name, artists, data.get("album", ""), pic_data)
