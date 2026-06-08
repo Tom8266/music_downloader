@@ -24,6 +24,13 @@ TIMEOUT = 30
 
 SOURCES = ["netease", "kuwo", "joox", "bilibili"]
 
+# 全局 Session — 复用 TCP 连接池，避免重复 DNS + TLS 握手
+_session = requests.Session()
+_session.headers.update({"User-Agent": "MusicDownloader/1.0"})
+_adapter = requests.adapters.HTTPAdapter(pool_connections=4, pool_maxsize=8, max_retries=2)
+_session.mount("https://", _adapter)
+_session.mount("http://", _adapter)
+
 
 def setup_logging(level=logging.INFO, log_file=None):
     fmt = logging.Formatter(
@@ -50,7 +57,7 @@ def search(name, source=DEFAULT_SOURCE, count=20, pages=1, album=False):
     s = source + "_album" if album else source
     params = {"types": "search", "source": s, "name": name, "count": count, "pages": pages}
     logger.debug("搜索: source=%s query=%r count=%d page=%d album=%s", s, name, count, pages, album)
-    resp = requests.get(API_BASE, params=params, timeout=TIMEOUT)
+    resp = _session.get(API_BASE, params=params, timeout=TIMEOUT)
     resp.raise_for_status()
     data = resp.json()
     n = len(data) if isinstance(data, list) else 0
@@ -61,7 +68,7 @@ def search(name, source=DEFAULT_SOURCE, count=20, pages=1, album=False):
 def get_song_url(track_id, source=DEFAULT_SOURCE, br=DEFAULT_BR):
     params = {"types": "url", "source": source, "id": track_id, "br": br}
     logger.debug("获取下载链接: id=%s source=%s br=%s", track_id, source, br)
-    resp = requests.get(API_BASE, params=params, timeout=TIMEOUT)
+    resp = _session.get(API_BASE, params=params, timeout=TIMEOUT)
     resp.raise_for_status()
     data = resp.json()
     if data.get("url"):
@@ -73,14 +80,14 @@ def get_song_url(track_id, source=DEFAULT_SOURCE, br=DEFAULT_BR):
 
 def get_lyric(lyric_id, source=DEFAULT_SOURCE):
     params = {"types": "lyric", "source": source, "id": lyric_id}
-    resp = requests.get(API_BASE, params=params, timeout=TIMEOUT)
+    resp = _session.get(API_BASE, params=params, timeout=TIMEOUT)
     resp.raise_for_status()
     return resp.json()
 
 
 def get_pic(pic_id, source=DEFAULT_SOURCE, size="500"):
     params = {"types": "pic", "source": source, "id": pic_id, "size": size}
-    resp = requests.get(API_BASE, params=params, timeout=TIMEOUT)
+    resp = _session.get(API_BASE, params=params, timeout=TIMEOUT)
     resp.raise_for_status()
     return resp.json()
 
@@ -115,7 +122,7 @@ def download_file(url, filepath, progress_callback=None, extra_headers=None, res
         logger.debug("下载 URL: %s", url[:120])
 
         try:
-            resp = requests.get(url, stream=True, timeout=(10, 120), headers=headers)
+            resp = _session.get(url, stream=True, timeout=(10, 120), headers=headers)
         except requests.RequestException:
             if attempt < max_retries - 1:
                 logger.warning("连接失败，%ds 后重试...", (attempt + 1) * 2)
@@ -277,12 +284,43 @@ def _embed_mp4(filepath, title, artist, album, pic_data):
     return filepath
 
 
-def fetch_cover(name, artist="", preferred_source=DEFAULT_SOURCE):
-    logger.debug("获取封面: name=%s artist=%s preferred=%s", name, artist, preferred_source)
-    for src in [preferred_source] + [s for s in SOURCES if s != preferred_source]:
+def fetch_cover_url(name, artist="", preferred_source=DEFAULT_SOURCE, pic_id="", size="300"):
+    """获取封面图片 URL（不下载图片本身）。
+
+    优先使用 pic_id 直接获取，fallback 到搜索。
+    对于 bilibili，pic_id 本身就是协议相对 URL。
+
+    Returns:
+        (url, source) tuple, 或 (None, None) 如果找不到。
+    """
+    sources = [preferred_source] + [s for s in SOURCES if s != preferred_source]
+
+    # 优先用 pic_id 直接获取 URL
+    if pic_id:
+        # Bilibili: pic_id is already an image URL (protocol-relative)
+        if preferred_source == "bilibili" and pic_id.startswith("//"):
+            url = "https:" + pic_id
+            logger.debug("封面URL(来自bilibili pic_id): %s", url)
+            return url, preferred_source
+        # 其他音源: 通过 get_pic API 获取 URL
+        try:
+            pic = get_pic(pic_id, preferred_source, size)
+            pic_url = pic.get("url", "")
+            if pic_url and pic_url.startswith(("http://", "https://")):
+                # bilibili get_pic 可能返回假 URL (如 "https://BV...")
+                if preferred_source == "bilibili" and "bv" in pic_url.lower() and not pic_url.startswith("https://i"):
+                    pass  # skip — fake URL
+                else:
+                    logger.debug("封面URL(来自pic_id): %s", pic_url)
+                    return pic_url, preferred_source
+        except Exception:
+            pass
+
+    # fallback: 搜索歌曲获取封面 URL
+    for src in sources:
         try:
             query = f"{name} {artist}".strip()
-            logger.debug("封面尝试: source=%s query=%r", src, query)
+            logger.debug("封面URL搜索尝试: source=%s query=%r", src, query)
             r = search(query, src, count=5)
             if not isinstance(r, list) or not r:
                 continue
@@ -292,20 +330,38 @@ def fetch_cover(name, artist="", preferred_source=DEFAULT_SOURCE):
                     item_artists = [item_artists]
                 if artist and not any(artist.lower() in str(a).lower() for a in item_artists):
                     continue
-                pic_id = item.get("pic_id", "")
-                if not pic_id:
+                item_pic_id = item.get("pic_id", "")
+                if not item_pic_id:
                     continue
-                pic = get_pic(pic_id, src, "500")
+                if src == "bilibili" and item_pic_id.startswith("//"):
+                    return "https:" + item_pic_id, src
+                pic = get_pic(item_pic_id, src, size)
                 pic_url = pic.get("url", "")
-                if pic_url:
-                    pic_resp = requests.get(pic_url, timeout=TIMEOUT)
-                    pic_resp.raise_for_status()
-                    logger.info("封面获取成功: source=%s size=%d", src, len(pic_resp.content))
-                    return pic_resp.content, src
+                if pic_url and pic_url.startswith(("http://", "https://")):
+                    if src == "bilibili" and "bv" in pic_url.lower() and not pic_url.startswith("https://i"):
+                        continue
+                    logger.debug("封面URL(来自搜索): source=%s url=%s", src, pic_url)
+                    return pic_url, src
         except Exception:
             continue
-    logger.warning("封面获取失败: 所有音源均未找到封面")
+
+    logger.warning("封面URL获取失败: 所有音源均未找到")
     return None, None
+
+
+def fetch_cover(name, artist="", preferred_source=DEFAULT_SOURCE):
+    """获取封面图片数据（下载图片字节）。先获取 URL，再下载图片。"""
+    url, src = fetch_cover_url(name, artist, preferred_source, size="500")
+    if not url:
+        return None, None
+    try:
+        pic_resp = _session.get(url, timeout=TIMEOUT)
+        pic_resp.raise_for_status()
+        logger.info("封面获取成功: source=%s size=%d", src, len(pic_resp.content))
+        return pic_resp.content, src
+    except Exception as e:
+        logger.warning("封面图片下载失败: %s — %s", url, e)
+        return None, None
 
 
 def cmd_search(args):

@@ -18,6 +18,12 @@ QUALITY_PRESETS = {
     "audio": "bestaudio/best",
 }
 
+# Bilibili audio extraction headers (shared with _build_opts)
+_BILI_HEADERS = {
+    "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+    "Referer": "https://www.bilibili.com/",
+}
+
 
 def _make_cookiefile(cookies):
     """Write cookie string to a temp file for yt-dlp. Returns path or None."""
@@ -71,10 +77,48 @@ def _build_opts(extra=None, cookies=None):
 
 
 # ── Bilibili API helpers ──────────────────────────────────────────────
-_BILI_HEADERS = {
-    "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
-    "Referer": "https://www.bilibili.com/",
-}
+
+
+def extract_audio_url(track_id, cookies=None):
+    """从 B站视频提取音频流 URL，用于音乐下载。
+
+    Args:
+        track_id: B站视频 ID (BV号)
+        cookies: Optional Netscape-format cookie string
+
+    Returns:
+        (audio_url, title) tuple. Raises Exception if no audio stream found.
+    """
+    bili_url = f"https://www.bilibili.com/video/{track_id}/"
+    opts, cookie_file = _build_opts(
+        extra={"format": "bestaudio/best"},
+        cookies=cookies,
+    )
+    try:
+        with yt_dlp.YoutubeDL(opts) as ydl:
+            info = ydl.extract_info(bili_url, download=False)
+    finally:
+        if cookie_file:
+            os.unlink(cookie_file)
+
+    audio_url = None
+    # Prefer pure audio formats (acodec != none, vcodec == none)
+    for fmt in info.get("formats", []):
+        if fmt.get("acodec") != "none" and fmt.get("vcodec") == "none":
+            audio_url = fmt.get("url")
+            break
+    # Fallback: any format with audio
+    if not audio_url:
+        for fmt in info.get("formats", []):
+            if fmt.get("acodec") != "none":
+                audio_url = fmt.get("url")
+                break
+    if not audio_url:
+        raise Exception("未找到 B站音频流")
+
+    title = info.get("title", "")
+    logger.info("yt-dlp 音频提取成功: %s", title[:50])
+    return audio_url, title
 
 
 def _bilibili_view_api(bvid):
