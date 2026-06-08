@@ -70,26 +70,32 @@ def _build_opts(extra=None, cookies=None):
     return opts, cookie_file
 
 
-def _get_bilibili_collection(bvid):
-    """Query Bilibili API for ugc_season (合集) metadata.
+# ── Bilibili API helpers ──────────────────────────────────────────────
+_BILI_HEADERS = {
+    "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+    "Referer": "https://www.bilibili.com/",
+}
 
-    Many B站 videos belong to a 合集 (collection) that yt-dlp doesn't expose.
-    Returns None if the video isn't in a collection, or a dict with:
-      title, thumbnail, is_playlist, playlist_count, playlist_items
-    where playlist_items use av{aid} URLs since the API returns aids.
-    """
+
+def _bilibili_view_api(bvid):
+    """Call B站 /x/web-interface/view for a given BV id. Returns data dict or None."""
     import requests
-    api_url = f"https://api.bilibili.com/x/web-interface/view?bvid={bvid}"
     try:
-        resp = requests.get(api_url, headers={
-            "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
-            "Referer": "https://www.bilibili.com/",
-        }, timeout=10)
-        data = resp.json()
+        resp = requests.get(
+            f"https://api.bilibili.com/x/web-interface/view?bvid={bvid}",
+            headers=_BILI_HEADERS, timeout=10)
+        return (resp.json().get("data") or {}) if resp.ok else None
     except Exception:
         return None
 
-    ugc = (data.get("data") or {}).get("ugc_season")
+
+def _get_bilibili_collection(bvid):
+    """Query B站 view API for ugc_season (合集). Returns collection-format dict or None."""
+    data = _bilibili_view_api(bvid)
+    if not data:
+        return None
+
+    ugc = data.get("ugc_season")
     if not ugc:
         return None
 
@@ -106,14 +112,12 @@ def _get_bilibili_collection(bvid):
                     "title": title,
                     "display_title": title,
                 })
-
     if not items:
         return None
 
-    cover = ugc.get("cover", "")
     return {
         "title": ugc.get("title", ""),
-        "thumbnail": cover,
+        "thumbnail": ugc.get("cover", ""),
         "is_playlist": True,
         "playlist_count": len(items),
         "playlist_items": items,
@@ -121,19 +125,16 @@ def _get_bilibili_collection(bvid):
 
 
 def _get_bilibili_bangumi_season(season_id):
-    """Query Bilibili PGC API for full season episode list.
+    """Query B站 PGC API for full season episode list.
 
-    Handles bangumi/episode URLs (e.g. /bangumi/play/ep779777).
     Filters to main-section episodes only (section_type == 0).
     Returns collection-format dict or None.
     """
     import requests
-    api_url = f"https://api.bilibili.com/pgc/view/web/season?season_id={season_id}"
     try:
-        resp = requests.get(api_url, headers={
-            "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
-            "Referer": "https://www.bilibili.com/",
-        }, timeout=10)
+        resp = requests.get(
+            f"https://api.bilibili.com/pgc/view/web/season?season_id={season_id}",
+            headers=_BILI_HEADERS, timeout=10)
         data = resp.json()
     except Exception:
         return None
@@ -145,19 +146,14 @@ def _get_bilibili_bangumi_season(season_id):
 
     items = []
     for ep in episodes:
-        # section_type 0 = main episodes, 1 = previews/extras — skip non-main
         if ep.get("section_type") != 0:
             continue
-        link = ep.get("link") or ep.get("share_url") or ""
-        # long_title has the real episode name; title is just the number
-        ep_title = ep.get("long_title") or ep.get("title") or "?"
         items.append({
             "id": str(ep.get("id") or ep.get("aid", "")),
-            "url": link,
-            "title": ep_title,
-            "display_title": ep_title,
+            "url": ep.get("link") or ep.get("share_url") or "",
+            "title": ep.get("long_title") or ep.get("title") or "?",
+            "display_title": ep.get("long_title") or ep.get("title") or "?",
         })
-
     if not items:
         return None
 
@@ -171,40 +167,22 @@ def _get_bilibili_bangumi_season(season_id):
 
 
 def _enrich_multipart_titles(bvid, items):
-    """Fill in real page titles for B站 multi-part videos.
+    """Fill real page titles for B站 multi-part videos via view API."""
+    import urllib.parse
 
-    yt-dlp extract_flat returns empty titles for B站 multi-part videos.
-    The B站 view API has a 'pages' array with 'part' titles keyed by page number.
-    """
-    import requests
-    api_url = f"https://api.bilibili.com/x/web-interface/view?bvid={bvid}"
-    try:
-        resp = requests.get(api_url, headers={
-            "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
-            "Referer": "https://www.bilibili.com/",
-        }, timeout=10)
-        data = resp.json()
-    except Exception:
+    data = _bilibili_view_api(bvid)
+    if not data:
         return None
 
-    pages = (data.get("data") or {}).get("pages", [])
+    pages = data.get("pages", [])
     if not pages:
         return None
 
-    # Build map: page number → part title
-    title_map = {}
-    for p in pages:
-        pn = p.get("page", 0)
-        part = p.get("part", "") or ""
-        if pn and part:
-            title_map[pn] = part
+    title_map = {p["page"]: p["part"] for p in pages if p.get("page") and p.get("part")}
 
-    # Match items by extracting page number from URL (?p=N)
-    import urllib.parse
     changed = False
     for item in items:
-        url = item.get("url", "")
-        parsed = urllib.parse.urlparse(url)
+        parsed = urllib.parse.urlparse(item.get("url", ""))
         qs = urllib.parse.parse_qs(parsed.query)
         p_vals = qs.get("p", [])
         if p_vals:
