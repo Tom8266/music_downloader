@@ -56,7 +56,7 @@ def _build_opts(extra=None, cookies=None):
         "retries": 3,
         "fragment_retries": 3,
         "extractor_retries": 3,
-        "playlist_items": "1:30",  # 合集最多取前30个，防止超时
+        "playlist_items": "1:200",  # 合集最多取前200个
         "http_headers": {
             "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
             "Referer": "https://www.bilibili.com/",
@@ -170,6 +170,56 @@ def _get_bilibili_bangumi_season(season_id):
     }
 
 
+def _enrich_multipart_titles(bvid, items):
+    """Fill in real page titles for B站 multi-part videos.
+
+    yt-dlp extract_flat returns empty titles for B站 multi-part videos.
+    The B站 view API has a 'pages' array with 'part' titles keyed by page number.
+    """
+    import requests
+    api_url = f"https://api.bilibili.com/x/web-interface/view?bvid={bvid}"
+    try:
+        resp = requests.get(api_url, headers={
+            "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+            "Referer": "https://www.bilibili.com/",
+        }, timeout=10)
+        data = resp.json()
+    except Exception:
+        return None
+
+    pages = (data.get("data") or {}).get("pages", [])
+    if not pages:
+        return None
+
+    # Build map: page number → part title
+    title_map = {}
+    for p in pages:
+        pn = p.get("page", 0)
+        part = p.get("part", "") or ""
+        if pn and part:
+            title_map[pn] = part
+
+    # Match items by extracting page number from URL (?p=N)
+    import urllib.parse
+    changed = False
+    for item in items:
+        url = item.get("url", "")
+        parsed = urllib.parse.urlparse(url)
+        qs = urllib.parse.parse_qs(parsed.query)
+        p_vals = qs.get("p", [])
+        if p_vals:
+            try:
+                pn = int(p_vals[0])
+            except ValueError:
+                continue
+            if pn in title_map:
+                item["title"] = title_map[pn]
+                item["display_title"] = title_map[pn]
+                changed = True
+
+    return items if changed else None
+
+
 def get_video_info(url, cookies=None):
     """Extract video metadata using yt-dlp.
 
@@ -185,7 +235,7 @@ def get_video_info(url, cookies=None):
     opts, cookie_file = _build_opts(cookies=cookies)
     # Use extract_flat for fast playlist handling
     opts["extract_flat"] = True
-    opts["playlist_items"] = "1:50"
+    opts["playlist_items"] = "1:200"
     try:
         with yt_dlp.YoutubeDL(opts) as ydl:
             info = ydl.extract_info(url, download=False)
@@ -240,6 +290,12 @@ def get_video_info(url, cookies=None):
                     playlist_count = season["playlist_count"]
                     if not thumbnail:
                         thumbnail = season.get("thumbnail", "")
+            # Also try B站 multi-part video API for real page titles
+            m2 = re.search(r'bilibili\.com/video/([A-Za-z0-9]+)', url)
+            if m2:
+                enriched = _enrich_multipart_titles(m2.group(1), items)
+                if enriched:
+                    items = enriched
         return {
             "title": info.get("title", ""),
             "thumbnail": thumbnail,
