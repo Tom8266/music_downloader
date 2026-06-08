@@ -104,6 +104,7 @@ def _get_bilibili_collection(bvid):
                     "id": str(aid),
                     "url": f"https://www.bilibili.com/video/av{aid}/",
                     "title": title,
+                    "display_title": title,
                 })
 
     if not items:
@@ -154,6 +155,7 @@ def _get_bilibili_bangumi_season(season_id):
             "id": str(ep.get("id") or ep.get("aid", "")),
             "url": link,
             "title": ep_title,
+            "display_title": ep_title,
         })
 
     if not items:
@@ -198,10 +200,12 @@ def get_video_info(url, cookies=None):
         items = []
         for i, e in enumerate(entries):
             if e:
+                real_title = e.get("title") or ""
                 items.append({
                     "id": e.get("id", ""),
                     "url": e.get("url") or "",
-                    "title": e.get("title") or f"Part {i + 1}",
+                    "title": real_title or f"Part {i + 1}",
+                    "display_title": real_title or f"P{i + 1}",
                 })
         # Quick extraction of first video to get cover image
         thumbnail = info.get("thumbnail", "")
@@ -232,6 +236,7 @@ def get_video_info(url, cookies=None):
                     for item in items:
                         if item["id"] in title_map:
                             item["title"] = title_map[item["id"]]
+                            item["display_title"] = title_map[item["id"]]
                     playlist_count = season["playlist_count"]
                     if not thumbnail:
                         thumbnail = season.get("thumbnail", "")
