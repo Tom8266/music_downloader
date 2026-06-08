@@ -2328,7 +2328,7 @@ function renderVideoInfo(info) {
     checklist.classList.remove('hidden');
     let items = '';
     (info.playlist_items || []).forEach((item, i) => {
-      items += `<label><input type="checkbox" value="${esc(item.url || item.id)}" data-title="${esc(item.title)}" data-index="${i}" onchange="updateBatchLabel()">P${i + 1} ${esc(item.title)}</label>`;
+      items += `<label><input type="checkbox" value="${esc(item.url || item.id)}" data-title="${esc(item.display_title || item.title)}" data-index="${i}" onchange="updateBatchLabel()">${esc(item.display_title || item.title || `P${i + 1}`)}</label>`;
     });
     checklist.innerHTML = `<label class="playlist-select-all"><input type="checkbox" onchange="toggleAllParts(this)"> 全选 / 取消全选</label>${items}`;
     updateBatchLabel();
