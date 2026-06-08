@@ -2,16 +2,22 @@
 """GD Studio Music API Web UI"""
 
 import argparse
+import hashlib
 import logging
 import os
 import time
-import json
 import threading
+from concurrent.futures import ThreadPoolExecutor
+
 import requests
 from flask import Flask, render_template, request, jsonify, send_file, Response
 
-from music_dl import search, get_song_url, get_lyric, get_pic, sanitize_filename, embed_metadata, fetch_cover, API_BASE, download_file, SOURCES, DEFAULT_SOURCE, setup_logging, format_artist_str
-from video_dl import get_video_info, download_video
+from music_dl import (
+    search, get_song_url, get_lyric, get_pic,
+    sanitize_filename, embed_metadata, fetch_cover, fetch_cover_url,
+    download_file, SOURCES, DEFAULT_SOURCE, setup_logging, format_artist_str,
+)
+from video_dl import get_video_info, download_video, extract_audio_url
 
 logger = logging.getLogger("webui")
 app = Flask(__name__)
@@ -34,44 +40,90 @@ def log_request(response):
 DOWNLOAD_DIR = os.environ.get("MUSIC_DOWNLOAD_DIR", os.path.join(os.path.expanduser("~"), "MusicDownloads"))
 os.makedirs(DOWNLOAD_DIR, exist_ok=True)
 
-downloads_status = {}
-downloads_lock = threading.Lock()
+# 线程池 — 最多 4 个并发下载
+_download_pool = ThreadPoolExecutor(max_workers=4, thread_name_prefix="dl-")
 
-video_downloads_status = {}
-video_downloads_lock = threading.Lock()
+
+# ── DownloadManager ──────────────────────────────────────────────────────
+
+class DownloadManager:
+    """统一管理音乐/视频下载状态，含自动清理。"""
+
+    def __init__(self, name="default", cleanup_ttl=300):
+        self.name = name
+        self.cleanup_ttl = cleanup_ttl
+        self._lock = threading.Lock()
+        self._status = {}
+
+    def init(self, key, **fields):
+        with self._lock:
+            self._status[key] = {"status": "downloading", "progress": 0, "_started_at": time.time(), **fields}
+
+    def update(self, key, **fields):
+        with self._lock:
+            if key in self._status:
+                self._status[key].update(fields)
+
+    def finish(self, key, **fields):
+        with self._lock:
+            self._status[key] = {"status": "done", "progress": 100, "_finished_at": time.time(), **fields}
+
+    def fail(self, key, error, **fields):
+        with self._lock:
+            self._status[key] = {"status": "error", "error": str(error), "_finished_at": time.time(), **fields}
+
+    def get(self, key):
+        with self._lock:
+            return dict(self._status.get(key, {"status": "unknown"}))
+
+    def cleanup(self):
+        """移除超过 TTL 的已完成/失败条目。"""
+        now = time.time()
+        with self._lock:
+            expired = [
+                k for k, st in self._status.items()
+                if st.get("status") in ("done", "error")
+                and now - st.get("_finished_at", now) > self.cleanup_ttl
+            ]
+            for k in expired:
+                del self._status[k]
+
+
+music_downloads = DownloadManager("music")
+video_downloads = DownloadManager("video")
+
+
+# ── Utils ────────────────────────────────────────────────────────────────
+
+def resolve_outdir(outdir):
+    if outdir:
+        outdir = os.path.expanduser(outdir)
+    if not outdir:
+        return DOWNLOAD_DIR
+    if os.path.isabs(outdir):
+        return os.path.normpath(outdir)
+    return os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), outdir))
+
+
+def validate_path(filepath, base_dir):
+    try:
+        return os.path.commonpath([os.path.realpath(filepath), os.path.realpath(base_dir)]) == os.path.realpath(base_dir)
+    except ValueError:
+        return False
 
 
 def _download_cover(pic_id, name, artists, source):
-    """获取封面: 优先用 pic_id，fallback 到搜索。"""
-    if pic_id:
-        # Bilibili's pic_id is already an image URL (protocol-relative)
-        if source == "bilibili" and pic_id.startswith("//"):
-            try:
-                pic_url = "https:" + pic_id
-                pic_resp = requests.get(pic_url, timeout=30)
-                pic_resp.raise_for_status()
-                logger.debug("封面(来自bilibili pic_id): %d bytes", len(pic_resp.content))
-                return pic_resp.content
-            except Exception:
-                pass
-        else:
-            try:
-                pic = get_pic(pic_id, source, "500")
-                pic_url = pic.get("url", "")
-                if pic_url and (pic_url.startswith("http://") or pic_url.startswith("https://")):
-                    pic_resp = requests.get(pic_url, timeout=30)
-                    pic_resp.raise_for_status()
-                    logger.debug("封面(来自pic_id): %d bytes", len(pic_resp.content))
-                    return pic_resp.content
-            except Exception:
-                pass
-    artist_name = format_artist_str(artists)
-    if isinstance(artists, list) and artists:
-        artist_name = artists[0]
+    """获取封面图片字节: 优先用 pic_id，fallback 到搜索。"""
+    url, _ = fetch_cover_url(name, format_artist_str(artists), source, pic_id=pic_id or "", size="500")
+    if not url:
+        return None
     try:
-        pic_data, _ = fetch_cover(name, artist_name, source)
-        return pic_data
-    except Exception:
+        pic_resp = requests.get(url, timeout=30)
+        pic_resp.raise_for_status()
+        logger.debug("封面下载: %d bytes", len(pic_resp.content))
+        return pic_resp.content
+    except Exception as e:
+        logger.debug("封面下载失败: %s", e)
         return None
 
 
@@ -90,22 +142,7 @@ def _embed_track_metadata(filepath, name, artists, album, pic_data):
         pass
 
 
-def resolve_outdir(outdir):
-    if outdir:
-        outdir = os.path.expanduser(outdir)
-    if not outdir:
-        return DOWNLOAD_DIR
-    if os.path.isabs(outdir):
-        return os.path.normpath(outdir)
-    return os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), outdir))
-
-
-def validate_path(filepath, base_dir):
-    try:
-        return os.path.commonpath([os.path.realpath(filepath), os.path.realpath(base_dir)]) == os.path.realpath(base_dir)
-    except ValueError:
-        return False
-
+# ── Routes ───────────────────────────────────────────────────────────────
 
 @app.route("/")
 def index():
@@ -171,13 +208,13 @@ def api_stream():
         headers["Range"] = range_header
 
     try:
-        upstream = requests.get(url, headers=headers, stream=True, timeout=120)
+        upstream = requests.get(url, headers=headers, stream=True, timeout=(10, 120))
         upstream.raise_for_status()
-    except Exception as e:
-        logger.exception("代理流失败: id=%s", track_id)
-        return jsonify({"error": str(e)}), 502
+    except requests.RequestException as e:
+        logger.exception("代理流失败: id=%s url=%.120s", track_id, url)
+        return jsonify({"error": f"上游请求失败: {e}"}), 502
 
-    status = 206 if range_header and upstream.status_code == 206 else upstream.status_code
+    resp_status = 206 if range_header and upstream.status_code == 206 else upstream.status_code
     resp_headers = {
         "Content-Type": upstream.headers.get("Content-Type", "audio/mp4"),
         "Accept-Ranges": "bytes",
@@ -188,11 +225,13 @@ def api_stream():
         resp_headers["Content-Range"] = upstream.headers["Content-Range"]
 
     def generate():
-        for chunk in upstream.iter_content(chunk_size=65536):
-            yield chunk
-        upstream.close()
+        try:
+            for chunk in upstream.iter_content(chunk_size=65536):
+                yield chunk
+        finally:
+            upstream.close()
 
-    return Response(generate(), status=status, headers=resp_headers)
+    return Response(generate(), status=resp_status, headers=resp_headers)
 
 
 @app.route("/api/lyric")
@@ -219,11 +258,10 @@ def api_pic():
     try:
         result = get_pic(pic_id, source, size)
         url = result.get("url", "")
-        # Validate: bilibili API returns fake URLs like "https://BV..."
-        if url and not (url.startswith("http://") or url.startswith("https://")):
+        # Validate URL; bilibili get_pic 可能返回假 URL (如 "https://BV...")
+        if url and not url.startswith(("http://", "https://")):
             url = ""
         elif url and "bv" in url.lower() and not url.startswith("https://i"):
-            # bilibili get_pic returns "https://BV..." — not a real URL
             url = ""
         result["url"] = url
         return jsonify(result)
@@ -231,6 +269,59 @@ def api_pic():
         logger.exception("获取专辑图失败: id=%s", pic_id)
         return jsonify({"error": str(e)}), 500
 
+
+@app.route("/api/cover")
+def api_cover():
+    name = request.args.get("name", "").strip()
+    artist = request.args.get("artist", "").strip()
+    source = request.args.get("source", DEFAULT_SOURCE)
+    pic_id = request.args.get("pic_id", "").strip()
+    if not name and not pic_id:
+        return jsonify({"error": "缺少歌曲名称或 pic_id"}), 400
+    url, found_source = fetch_cover_url(name, artist, source, pic_id=pic_id)
+    return jsonify({"url": url or "", "source": found_source or source})
+
+
+@app.route("/api/dirs")
+def api_dirs():
+    path = request.args.get("path", "").strip()
+    home = os.path.expanduser("~")
+    if not path:
+        path = home
+    path = os.path.realpath(os.path.expanduser(path))
+    # 安全限制：只能浏览 home 目录及其子目录
+    try:
+        if os.path.commonpath([path, home]) != home:
+            return jsonify({"error": "只允许浏览用户家目录"}), 403
+    except ValueError:
+        return jsonify({"error": "无效路径"}), 400
+    if not os.path.isdir(path):
+        return jsonify({"error": "目录不存在"}), 404
+    parent = os.path.dirname(path)
+    # 禁止访问 home 的父目录
+    try:
+        if os.path.commonpath([parent, home]) != home:
+            parent = None
+    except ValueError:
+        parent = None
+    try:
+        entries = []
+        for name in sorted(os.listdir(path), key=lambda n: n.lower()):
+            full = os.path.join(path, name)
+            if os.path.isdir(full) and not name.startswith('.'):
+                entries.append({"name": name, "path": full})
+    except PermissionError:
+        logger.warning("目录浏览无权限: %s", path)
+        return jsonify({"error": "无权限访问"}), 403
+    return jsonify({
+        "current": path,
+        "parent": parent,
+        "entries": entries,
+        "home": home,
+    })
+
+
+# ── Music Download Routes ────────────────────────────────────────────────
 
 @app.route("/api/download", methods=["POST"])
 def api_download():
@@ -245,8 +336,10 @@ def api_download():
     if not track_id:
         return jsonify({"error": "缺少曲目 ID"}), 400
 
+    outdir = resolve_outdir(data.get("outdir", ""))
+    os.makedirs(outdir, exist_ok=True)
+
     if source == "bilibili":
-        # B站不走 GD API，直接 yt-dlp 提取音频
         url = None
         ext = ".m4a"
     else:
@@ -267,10 +360,6 @@ def api_download():
 
     artist_str = format_artist_str(artists)
     filename_suffix = f" - {artist_str}" if artist_str else ""
-
-    outdir = resolve_outdir(data.get("outdir", ""))
-    os.makedirs(outdir, exist_ok=True)
-
     filename = sanitize_filename(f"{name}{filename_suffix}{ext}")
     filepath = os.path.join(outdir, filename)
 
@@ -283,68 +372,38 @@ def api_download():
     part_file = filepath + ".part"
     initial_bytes = os.path.getsize(part_file) if os.path.exists(part_file) else 0
 
-    with downloads_lock:
-        downloads_status[track_id] = {
-            "status": "downloading",
-            "name": name,
-            "progress": 0,
-            "downloaded_bytes": initial_bytes,
-            "total_bytes": 0,
-            "size": result.get("size", 0) if not source == "bilibili" else 0,
-            "br": result.get("br", "?") if not source == "bilibili" else "?",
-            "filepath": filepath,
-        }
+    music_downloads.init(track_id,
+        name=name, downloaded_bytes=initial_bytes, total_bytes=0,
+        size=result.get("size", 0) if source != "bilibili" else 0,
+        br=result.get("br", "?") if source != "bilibili" else "?",
+        filepath=filepath)
 
     def do_download():
         try:
-            last_pct = [0]
-            last_bytes = [0]
-            logger.info("下载线程启动: %s → %s", name, filename)
+            last_pct = 0
+            last_bytes = 0
 
             def on_progress(downloaded, total, resumed=0):
+                nonlocal last_pct, last_bytes
                 if total:
                     pct = int(downloaded / total * 100)
-                    if pct == last_pct[0]:
+                    if pct == last_pct:
                         return
-                    last_pct[0] = pct
+                    last_pct = pct
                 else:
-                    if downloaded - last_bytes[0] < 102400:
+                    if downloaded - last_bytes < 102400:
                         return
-                    last_bytes[0] = downloaded
+                    last_bytes = downloaded
                     pct = 0
                 if pct % 20 == 0:
                     logger.debug("下载进度: %s %d%%", name, pct)
-                with downloads_lock:
-                    if track_id in downloads_status:
-                        downloads_status[track_id]["progress"] = pct
-                        downloads_status[track_id]["downloaded_bytes"] = downloaded
-                        downloads_status[track_id]["total_bytes"] = total
+                music_downloads.update(track_id, progress=pct,
+                    downloaded_bytes=downloaded, total_bytes=total)
 
             dl_url = url
             if source == "bilibili":
-                import yt_dlp
-                bili_url = f"https://www.bilibili.com/video/{track_id}/"
-                ydl_opts = {
-                    "quiet": True, "no_warnings": True,
-                    "format": "bestaudio/best",
-                    "http_headers": {"User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36", "Referer": "https://www.bilibili.com/"},
-                }
-                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                    info = ydl.extract_info(bili_url, download=False)
-                audio_url = None
-                for fmt in info.get("formats", []):
-                    if fmt.get("acodec") != "none" and fmt.get("vcodec") == "none":
-                        audio_url = fmt.get("url")
-                        break
-                if not audio_url:
-                    for fmt in info.get("formats", []):
-                        if fmt.get("acodec") != "none":
-                            audio_url = fmt.get("url")
-                            break
-                if not audio_url:
-                    raise Exception("未找到 B站音频流")
-                dl_url = audio_url
-                logger.info("yt-dlp 音频提取成功: %s", info.get("title", "")[:50])
+                dl_url, bili_title = extract_audio_url(track_id)
+                logger.info("B站音频提取成功: %s", bili_title[:50])
 
             dl_headers = {"Referer": "https://www.bilibili.com/", "User-Agent": "Mozilla/5.0"} if source == "bilibili" else None
             download_file(dl_url, filepath, progress_callback=on_progress, extra_headers=dl_headers)
@@ -352,39 +411,20 @@ def api_download():
             pic_data = _download_cover(pic_id, name, artists, source)
             _embed_track_metadata(filepath, name, artists, data.get("album", ""), pic_data)
 
-            with downloads_lock:
-                downloads_status[track_id]["status"] = "done"
-                downloads_status[track_id]["progress"] = 100
-                downloads_status[track_id]["_finished_at"] = time.time()
-            logger.info("下载线程完成: %s", filename)
+            music_downloads.finish(track_id, name=name, filepath=filepath)
+            logger.info("下载完成: %s", filename)
         except Exception as e:
-            logger.exception("下载线程失败: %s", name)
-            with downloads_lock:
-                downloads_status[track_id] = {"status": "error", "error": str(e), "name": name, "_finished_at": time.time()}
+            logger.exception("下载失败: %s", name)
+            music_downloads.fail(track_id, e, name=name)
 
-    threading.Thread(target=do_download, daemon=True).start()
+    _download_pool.submit(do_download)
     return jsonify({"status": "started", "id": track_id, "filename": filename})
-
-
-def _cleanup_old_downloads():
-    """清理超过 5 分钟的已完成/失败下载状态。"""
-    now = time.time()
-    with downloads_lock:
-        expired = [
-            tid for tid, st in downloads_status.items()
-            if st.get("status") in ("done", "error")
-            and now - st.get("_finished_at", now) > 300
-        ]
-        for tid in expired:
-            del downloads_status[tid]
 
 
 @app.route("/api/download/<track_id>/status")
 def api_download_status(track_id):
-    with downloads_lock:
-        status = downloads_status.get(track_id, {"status": "unknown"})
-    _cleanup_old_downloads()
-    return jsonify(status)
+    music_downloads.cleanup()
+    return jsonify(music_downloads.get(track_id))
 
 
 @app.route("/api/downloaded")
@@ -436,83 +476,7 @@ def api_delete_file():
         return jsonify({"error": str(e)}), 500
 
 
-@app.route("/api/cover")
-def api_cover():
-    name = request.args.get("name", "").strip()
-    artist = request.args.get("artist", "").strip()
-    source = request.args.get("source", DEFAULT_SOURCE)
-    if not name:
-        return jsonify({"error": "缺少歌曲名称"}), 400
-    url = _fetch_cover_url(name, artist, source)
-    if not url:
-        # fallback 到其他音源
-        for src in [s for s in SOURCES if s != source]:
-            url = _fetch_cover_url(name, artist, src)
-            if url:
-                source = src
-                break
-    return jsonify({"url": url or "", "source": source})
-
-
-def _fetch_cover_url(name, artist, source):
-    """获取封面 URL（不下载图片）。"""
-    try:
-        query = f"{name} {artist}".strip()
-        r = search(query, source, count=5)
-        if not isinstance(r, list) or not r:
-            return None
-        for item in r:
-            item_artists = item.get("artist", [])
-            if not isinstance(item_artists, list):
-                item_artists = [item_artists]
-            if artist and not any(artist.lower() in str(a).lower() for a in item_artists):
-                continue
-            pic_id = item.get("pic_id", "")
-            if not pic_id:
-                continue
-            # Bilibili's pic_id is already an image URL
-            if source == "bilibili" and pic_id.startswith("//"):
-                return "https:" + pic_id
-            pic = get_pic(pic_id, source, "300")
-            pic_url = pic.get("url", "")
-            if pic_url and (pic_url.startswith("http://") or pic_url.startswith("https://")):
-                return pic_url
-    except Exception:
-        pass
-    return None
-
-
-@app.route("/api/dirs")
-def api_dirs():
-    path = request.args.get("path", "").strip()
-    if not path:
-        path = os.path.expanduser("~")
-    path = os.path.realpath(os.path.expanduser(path))
-    if not os.path.isdir(path):
-        return jsonify({"error": "目录不存在"}), 404
-    parent = os.path.dirname(path)
-    if parent == path:
-        parent = None
-    try:
-        entries = []
-        for name in sorted(os.listdir(path), key=lambda n: n.lower()):
-            full = os.path.join(path, name)
-            if os.path.isdir(full) and not name.startswith('.'):
-                entries.append({"name": name, "path": full})
-    except PermissionError:
-        logger.warning("目录浏览无权限: %s", path)
-        return jsonify({"error": "无权限访问"}), 403
-    return jsonify({
-        "current": path,
-        "parent": parent,
-        "entries": entries,
-        "home": os.path.expanduser("~"),
-    })
-
-
-# ── Video Download Routes ──────────────────────────────────────────────
-
-import hashlib
+# ── Video Download Routes ────────────────────────────────────────────────
 
 
 @app.route("/api/video/info", methods=["POST"])
@@ -540,7 +504,7 @@ def api_video_download():
     if not url:
         return jsonify({"error": "缺少视频链接"}), 400
 
-    vid = hashlib.md5(url.encode()).hexdigest()[:12]
+    vid = hashlib.sha256(url.encode()).hexdigest()[:12]
 
     try:
         info = get_video_info(url, cookies=cookie)
@@ -555,75 +519,42 @@ def api_video_download():
         outdir = os.path.join(os.path.expanduser("~"), "Videos")
     os.makedirs(outdir, exist_ok=True)
 
-    with video_downloads_lock:
-        video_downloads_status[vid] = {
-            "status": "downloading",
-            "title": title,
-            "progress": 0,
-            "downloaded_bytes": 0,
-            "total_bytes": 0,
-            "speed": 0,
-            "eta": 0,
-        }
+    video_downloads.init(vid, title=title, downloaded_bytes=0, total_bytes=0, speed=0, eta=0)
 
     def do_video_download():
         try:
-            last_update = [0]
+            last_update = time.time()
 
             def on_progress(downloaded, total, speed, eta):
+                nonlocal last_update
                 now = time.time()
-                # Post-processing signal from yt-dlp (download done, merging now)
                 if downloaded < 0:
-                    with video_downloads_lock:
-                        if vid in video_downloads_status:
-                            video_downloads_status[vid]["status"] = "processing"
-                            video_downloads_status[vid]["progress"] = 100
+                    # yt-dlp post-processing signal
+                    video_downloads.update(vid, status="processing", progress=100)
                     return
-                if now - last_update[0] < 0.5 and total and downloaded < total:
+                if now - last_update < 0.5 and total and downloaded < total:
                     return
-                last_update[0] = now
+                last_update = now
                 pct = int(downloaded / total * 100) if total else 0
-                with video_downloads_lock:
-                    if vid in video_downloads_status:
-                        video_downloads_status[vid]["progress"] = pct
-                        video_downloads_status[vid]["downloaded_bytes"] = downloaded
-                        video_downloads_status[vid]["total_bytes"] = total
-                        video_downloads_status[vid]["speed"] = speed
-                        video_downloads_status[vid]["eta"] = eta
+                video_downloads.update(vid, progress=pct,
+                    downloaded_bytes=downloaded, total_bytes=total,
+                    speed=speed, eta=eta)
 
             filepath = download_video(url, quality, outdir, progress_callback=on_progress, cookies=cookie)
-            with video_downloads_lock:
-                video_downloads_status[vid]["status"] = "done"
-                video_downloads_status[vid]["progress"] = 100
-                video_downloads_status[vid]["filepath"] = filepath or ""
-                video_downloads_status[vid]["_finished_at"] = time.time()
-            logger.info("视频下载线程完成: %s", title)
+            video_downloads.finish(vid, title=title, filepath=filepath or "")
+            logger.info("视频下载完成: %s", title)
         except Exception as e:
-            logger.exception("视频下载线程失败: %s", title)
-            with video_downloads_lock:
-                video_downloads_status[vid] = {
-                    "status": "error", "error": str(e), "title": title, "_finished_at": time.time()
-                }
+            logger.exception("视频下载失败: %s", title)
+            video_downloads.fail(vid, e, title=title)
 
-    threading.Thread(target=do_video_download, daemon=True).start()
+    _download_pool.submit(do_video_download)
     return jsonify({"status": "started", "id": vid, "title": title})
 
 
 @app.route("/api/video/<vid>/status")
 def api_video_download_status(vid):
-    with video_downloads_lock:
-        status = video_downloads_status.get(vid, {"status": "unknown"})
-    # Cleanup old entries
-    now = time.time()
-    with video_downloads_lock:
-        expired = [
-            k for k, st in video_downloads_status.items()
-            if st.get("status") in ("done", "error")
-            and now - st.get("_finished_at", now) > 300
-        ]
-        for k in expired:
-            del video_downloads_status[k]
-    return jsonify(status)
+    video_downloads.cleanup()
+    return jsonify(video_downloads.get(vid))
 
 
 @app.route("/api/video/downloaded")
@@ -665,7 +596,6 @@ def serve_video_file(filename):
 def api_video_delete_file():
     data = request.get_json() or {}
     outdir = resolve_outdir(data.get("outdir", ""))
-    # If no explicit outdir, video downloads default to ~/Videos
     if not data.get("outdir", "").strip():
         outdir = os.path.join(os.path.expanduser("~"), "Videos")
     filename = data.get("filename", "").strip()
@@ -682,6 +612,9 @@ def api_video_delete_file():
         return jsonify({"status": "deleted", "filename": filename})
     except OSError as e:
         return jsonify({"error": str(e)}), 500
+
+
+# ── Main ─────────────────────────────────────────────────────────────────
 
 
 def main():
