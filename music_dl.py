@@ -13,7 +13,7 @@ from mutagen.id3 import ID3, APIC, USLT, TIT2, TPE1, TALB, TCON, TYER, error as 
 from mutagen.flac import FLAC, Picture
 from mutagen.mp4 import MP4, MP4Cover
 from rich.progress import Progress, BarColumn, TextColumn, TimeRemainingColumn, TransferSpeedColumn, DownloadColumn
-from video_dl import get_video_info, download_video, QUALITY_PRESETS
+from video_dl import get_video_info, download_video, QUALITY_PRESETS, BILI_HEADERS
 
 logger = logging.getLogger("music_dl")
 
@@ -313,8 +313,8 @@ def fetch_cover_url(name, artist="", preferred_source=DEFAULT_SOURCE, pic_id="",
                 else:
                     logger.debug("封面URL(来自pic_id): %s", pic_url)
                     return pic_url, preferred_source
-        except Exception:
-            pass
+        except (requests.RequestException, KeyError) as e:
+            logger.debug("封面URL获取失败 (pic_id方式): %s", e)
 
     # fallback: 搜索歌曲获取封面 URL
     for src in sources:
@@ -342,11 +342,25 @@ def fetch_cover_url(name, artist="", preferred_source=DEFAULT_SOURCE, pic_id="",
                         continue
                     logger.debug("封面URL(来自搜索): source=%s url=%s", src, pic_url)
                     return pic_url, src
-        except Exception:
+        except (requests.RequestException, KeyError, ValueError) as e:
+            logger.debug("封面URL搜索失败 (source=%s): %s", src, e)
             continue
 
     logger.warning("封面URL获取失败: 所有音源均未找到")
     return None, None
+
+
+def fetch_lyric(track_id, source=DEFAULT_SOURCE):
+    """获取歌词文本（LRC 格式）。失败返回 None。"""
+    try:
+        result = get_lyric(track_id, source)
+        lyric = result.get("lyric", "") if isinstance(result, dict) else ""
+        if lyric:
+            logger.debug("歌词获取成功: id=%s source=%s (%d 字符)", track_id, source, len(lyric))
+            return lyric
+    except Exception as e:
+        logger.debug("歌词获取失败: id=%s source=%s — %s", track_id, source, e)
+    return None
 
 
 def fetch_cover(name, artist="", preferred_source=DEFAULT_SOURCE):
@@ -415,7 +429,7 @@ def cmd_download(args):
     print(f"歌曲: {name}{filename_suffix}")
     print(f"音质: {actual_br}  大小: {size_kb} KB")
 
-    dl_headers = {"Referer": "https://www.bilibili.com/", "User-Agent": "Mozilla/5.0"} if args.source == "bilibili" else None
+    dl_headers = dict(BILI_HEADERS) if args.source == "bilibili" else None
     download_file(url, filepath, extra_headers=dl_headers)
 
     pic_data = None
@@ -423,16 +437,23 @@ def cmd_download(args):
     if not args.no_pic:
         pic_data, pic_src = fetch_cover(name, args.artist or "", args.source)
 
+    lyric_text = None
+    if not args.no_lyric:
+        lyric_text = fetch_lyric(args.id, args.source)
+
     try:
         embed_metadata(
             filepath,
             title=name,
             artist=args.artist or "",
             album=args.album or "",
+            lyric_text=lyric_text or "",
             pic_data=pic_data,
         )
         if pic_data:
             print(f"  封面已嵌入{f' ({pic_src})' if pic_src else ''}")
+        if lyric_text:
+            print(f"  歌词已嵌入 ({len(lyric_text)} 字符)")
     except Exception as e:
         logger.exception("嵌入元数据失败: %s", filepath)
         print(f"  嵌入元数据失败: {e}")
@@ -449,7 +470,8 @@ def cmd_lyric(args):
     if lyric:
         print(f"\n--- 歌词 (LRC) ---\n{lyric}")
         if args.save:
-            filepath = f"{args.id}.lrc"
+            os.makedirs(args.outdir, exist_ok=True)
+            filepath = os.path.join(args.outdir, f"{args.id}.lrc")
             with open(filepath, "w", encoding="utf-8") as f:
                 f.write(lyric)
             print(f"\n已保存: {filepath}")
@@ -518,8 +540,8 @@ def main():
   %(prog)s search 周杰伦 --album                   # 搜索专辑
   %(prog)s download abc123                         # 下载歌曲
   %(prog)s download abc123 --name 大鱼 --artist 周深 # 指定歌名艺术家
-  %(prog)s download abc123 -b 999                  # 无损下载（自动嵌入封面）
-  %(prog)s download abc123 --no-pic                # 不嵌入封面
+  %(prog)s download abc123 -b 999                  # 无损下载（自动嵌入封面+歌词）
+  %(prog)s download abc123 --no-pic --no-lyric     # 不嵌入封面和歌词
   %(prog)s lyric abc123                            # 获取歌词
   %(prog)s pic abc123                              # 获取专辑图
   %(prog)s video info <url>                        # 查看视频信息
@@ -542,6 +564,7 @@ def main():
     p_dl.add_argument("-s", "--source", default=DEFAULT_SOURCE, choices=SOURCES, help="音乐源 (默认: netease)")
     p_dl.add_argument("-b", "--br", default=DEFAULT_BR, choices=["128", "192", "320", "740", "999"], help="音质 (默认: 320)")
     p_dl.add_argument("--no-pic", action="store_true", help="不嵌入封面")
+    p_dl.add_argument("--no-lyric", action="store_true", help="不嵌入歌词")
     p_dl.add_argument("--name", default="", help="自定义文件名（省略时自动搜索）")
     p_dl.add_argument("--artist", default="", help="自定义艺术家名")
     p_dl.add_argument("--album", default="", help="自定义专辑名")
@@ -551,6 +574,7 @@ def main():
     p_lyric.add_argument("id", help="歌词 ID")
     p_lyric.add_argument("-s", "--source", default=DEFAULT_SOURCE, choices=SOURCES, help="音乐源 (默认: netease)")
     p_lyric.add_argument("--save", action="store_true", help="保存为 .lrc 文件")
+    p_lyric.add_argument("-o", "--outdir", default="downloads", help="输出目录 (默认: downloads)")
     p_lyric.add_argument("--show-trans", action="store_true", help="显示中文翻译")
 
     p_pic = sub.add_parser("pic", help="获取专辑图")

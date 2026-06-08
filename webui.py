@@ -14,10 +14,11 @@ from flask import Flask, render_template, request, jsonify, send_file, Response
 
 from music_dl import (
     search, get_song_url, get_lyric, get_pic,
-    sanitize_filename, embed_metadata, fetch_cover, fetch_cover_url,
+    sanitize_filename, embed_metadata, fetch_cover, fetch_cover_url, fetch_lyric,
     download_file, SOURCES, DEFAULT_SOURCE, setup_logging, format_artist_str,
+    _session,
 )
-from video_dl import get_video_info, download_video, extract_audio_url
+from video_dl import get_video_info, download_video, extract_audio_url, BILI_HEADERS
 
 logger = logging.getLogger("webui")
 app = Flask(__name__)
@@ -96,13 +97,31 @@ video_downloads = DownloadManager("video")
 # ── Utils ────────────────────────────────────────────────────────────────
 
 def resolve_outdir(outdir):
+    """解析并验证下载目录。
+
+    规则：
+    1. 空值 → 默认 DOWNLOAD_DIR (来自 MUSIC_DOWNLOAD_DIR 环境变量 或 ~/MusicDownloads)
+    2. 绝对路径 → 规范化为绝对路径，但必须在家目录内
+    3. 相对路径 → 相对于 webui.py 所在目录解析，必须在家目录内
+    """
+    home = os.path.expanduser("~")
     if outdir:
         outdir = os.path.expanduser(outdir)
     if not outdir:
         return DOWNLOAD_DIR
     if os.path.isabs(outdir):
-        return os.path.normpath(outdir)
-    return os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), outdir))
+        resolved = os.path.normpath(outdir)
+    else:
+        resolved = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), outdir))
+    # 安全检查：只允许家目录内的路径（以及 DOWNLOAD_DIR 自身，它可能通过环境变量设置到家目录外）
+    try:
+        if os.path.commonpath([os.path.realpath(resolved), os.path.realpath(home)]) != os.path.realpath(home):
+            logger.warning("拒绝越权目录访问: %s (不在家目录内)", resolved)
+            return DOWNLOAD_DIR
+    except ValueError:
+        logger.warning("无效目录路径: %s", resolved)
+        return DOWNLOAD_DIR
+    return resolved
 
 
 def validate_path(filepath, base_dir):
@@ -118,17 +137,17 @@ def _download_cover(pic_id, name, artists, source):
     if not url:
         return None
     try:
-        pic_resp = requests.get(url, timeout=30)
+        pic_resp = _session.get(url, timeout=30)
         pic_resp.raise_for_status()
         logger.debug("封面下载: %d bytes", len(pic_resp.content))
         return pic_resp.content
-    except Exception as e:
+    except (requests.RequestException, OSError) as e:
         logger.debug("封面下载失败: %s", e)
         return None
 
 
-def _embed_track_metadata(filepath, name, artists, album, pic_data):
-    """嵌入元数据到音频文件。"""
+def _embed_track_metadata(filepath, name, artists, album, pic_data, lyric_text=""):
+    """嵌入元数据到音频文件（含封面和歌词）。"""
     artist_display = format_artist_str(artists)
     try:
         embed_metadata(
@@ -136,6 +155,7 @@ def _embed_track_metadata(filepath, name, artists, album, pic_data):
             title=name,
             artist=artist_display,
             album=album or "",
+            lyric_text=lyric_text,
             pic_data=pic_data,
         )
     except Exception:
@@ -200,10 +220,7 @@ def api_stream():
         return jsonify({"error": str(e)}), 500
 
     range_header = request.headers.get("Range", "")
-    headers = {
-        "Referer": "https://www.bilibili.com/",
-        "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36",
-    }
+    headers = dict(BILI_HEADERS)
     if range_header:
         headers["Range"] = range_header
 
@@ -390,13 +407,14 @@ def api_download():
                     if pct == last_pct:
                         return
                     last_pct = pct
+                    if pct % 20 == 0:
+                        logger.debug("下载进度: %s %d%%", name, pct)
                 else:
-                    if downloaded - last_bytes < 102400:
+                    # total unknown — throttle updates to every 50KB for responsiveness
+                    if downloaded - last_bytes < 51200:
                         return
                     last_bytes = downloaded
-                    pct = 0
-                if pct % 20 == 0:
-                    logger.debug("下载进度: %s %d%%", name, pct)
+                    pct = -1  # sentinel: downloading but total unknown
                 music_downloads.update(track_id, progress=pct,
                     downloaded_bytes=downloaded, total_bytes=total)
 
@@ -405,11 +423,12 @@ def api_download():
                 dl_url, bili_title = extract_audio_url(track_id)
                 logger.info("B站音频提取成功: %s", bili_title[:50])
 
-            dl_headers = {"Referer": "https://www.bilibili.com/", "User-Agent": "Mozilla/5.0"} if source == "bilibili" else None
+            dl_headers = dict(BILI_HEADERS) if source == "bilibili" else None
             download_file(dl_url, filepath, progress_callback=on_progress, extra_headers=dl_headers)
 
             pic_data = _download_cover(pic_id, name, artists, source)
-            _embed_track_metadata(filepath, name, artists, data.get("album", ""), pic_data)
+            lyric_text = fetch_lyric(track_id, source) or ""
+            _embed_track_metadata(filepath, name, artists, data.get("album", ""), pic_data, lyric_text)
 
             music_downloads.finish(track_id, name=name, filepath=filepath)
             logger.info("下载完成: %s", filename)

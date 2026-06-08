@@ -1576,6 +1576,18 @@ audio::-webkit-media-controls-time-remaining-display {
         </div>
       </div>
       <div class="field-group">
+        <label>默认视频质量</label>
+        <select id="setVideoQuality">
+          <option value="best" selected>最佳质量</option>
+          <option value="2160p">4K</option>
+          <option value="1080p">1080P</option>
+          <option value="720p">720P</option>
+          <option value="480p">480P</option>
+          <option value="360p">360P</option>
+          <option value="audio">仅音频</option>
+        </select>
+      </div>
+      <div class="field-group">
         <label>Cookie — Netscape 格式</label>
         <textarea id="setCookie" rows="3" class="cookie-textarea" placeholder="用 Get cookies.txt LOCALLY 插件导出后粘贴…&#10;用于解锁需登录的视频（如 B站大会员）"></textarea>
       </div>
@@ -2109,6 +2121,7 @@ function saveSettings() {
   localStorage.setItem('md_settings', JSON.stringify(s));
   const vs = {
     outdir: document.getElementById('setVideoOutdir').value,
+    quality: document.getElementById('setVideoQuality').value,
     cookie: document.getElementById('setCookie').value,
   };
   localStorage.setItem('md_video_settings', JSON.stringify(vs));
@@ -2126,11 +2139,13 @@ function getVideoSettings() {
   try { return JSON.parse(localStorage.getItem('md_video_settings') || '{}'); } catch(e) { return {}; }
 }
 function getVideoOutdir() { return getVideoSettings().outdir || ''; }
+function getVideoQuality() { return getVideoSettings().quality || 'best'; }
 function getVideoCookie() { return getVideoSettings().cookie || ''; }
 
 function loadVideoSettings() {
   const s = getVideoSettings();
   document.getElementById('setVideoOutdir').value = s.outdir || '';
+  document.getElementById('setVideoQuality').value = s.quality || 'best';
   document.getElementById('setCookie').value = s.cookie || '';
 }
 
@@ -2335,8 +2350,8 @@ function renderVideoInfo(info) {
     checklist.classList.add('hidden');
     sel.style.maxWidth = '200px';
     sel.innerHTML = (info.formats || [])
-      .filter(f => f.has_video && f.has_audio)
-      .slice(0, 8)
+      .filter(f => f.has_video || f.has_audio)
+      .slice(0, 10)
       .map(f => {
         const sizeStr = f.filesize ? '  ' + fmtSize(f.filesize) : '';
         return `<option value="${esc(f.id)}">${esc(f.resolution)} ${esc(f.ext)}${sizeStr}</option>`;
@@ -2344,13 +2359,16 @@ function renderVideoInfo(info) {
     if (!sel.innerHTML) {
       sel.innerHTML = '<option value="best">最佳</option>';
     }
-    sel.innerHTML += `
-      <option disabled>预设</option>
-      <option value="best">最佳质量</option>
-      <option value="1080">1080p</option>
-      <option value="720">720p</option>
-      <option value="480">480p</option>
-    `;
+    // Pre-select the user's default quality preference
+    const pref = getVideoQuality();
+    if (pref && pref !== 'best') {
+      for (const opt of sel.options) {
+        const res = opt.textContent.toLowerCase();
+        if (pref === 'audio' && res.includes('audio')) { opt.selected = true; break; }
+        if (pref === '2160p' && (res.includes('4k') || res.includes('2160'))) { opt.selected = true; break; }
+        if (res.includes(pref)) { opt.selected = true; break; }
+      }
+    }
   }
 }
 
